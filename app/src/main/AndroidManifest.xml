@@ -52,6 +52,13 @@
         android:name="com.andrerinas.openheadunit.permission.NAVIGATION_UPDATE"
         android:protectionLevel="signature" />
 
+    <!-- Aiways: the launcher's backend settings (aiways/AiwaysConfigReceiver). Signature level:
+         the launcher and this app share a key, nothing else can send or read them. -->
+    <permission
+        android:name="com.aiways.permission.HEADUNIT_LINK"
+        android:protectionLevel="signature" />
+    <uses-permission android:name="com.aiways.permission.HEADUNIT_LINK" />
+
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
@@ -454,5 +461,17 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/provider_paths" />
         </provider>
+        <!-- Aiways: settings from the launcher, every ~15 min; drives log upload and self-update. -->
+        <receiver
+            android:name=".aiways.AiwaysConfigReceiver"
+            android:exported="true"
+            android:permission="com.aiways.permission.HEADUNIT_LINK">
+            <intent-filter>
+                <action android:name="com.aiways.headunit.CONFIG" />
+            </intent-filter>
+        </receiver>
+        <service
+            android:name=".aiways.AiwaysSyncService"
+            android:exported="false" />
     </application>
 </manifest>

@@ -7,6 +7,10 @@ plugins {
     kotlin("android")
 }
 
+val aiwaysVersion = Properties().apply {
+    rootProject.file("aiways/version.properties").inputStream().use { load(it) }
+}
+
 android {
     compileSdk = 36
     ndkVersion = "29.0.14206865"
@@ -89,15 +93,14 @@ android {
     }
 
     defaultConfig {
-        // Keep the original Play Store application id so the app stays the same listing (reviews,
-        // installs, testers) and existing users just get a normal update. Only the display name
-        // changed to Open Headunit. The code package and namespace stay openheadunit, so the
-        // applicationId deliberately differs from the namespace, like com.google.talk for Hangouts.
-        applicationId = "com.andrerinas.headunitrevived"
+        // Aiways fork: its own package, so it installs next to the stock Open Headunit, and its own
+        // version line (aiways/version.properties) for the backend's "headunit" update channel,
+        // which takes builds 1..999 and installs only a higher one on the car.
+        applicationId = "com.aiways.headunit"
         minSdk = 16
         targetSdk = 36
-        versionCode = 120
-        versionName = "4.0.0-alpha"
+        versionCode = aiwaysVersion.getProperty("VERSION_CODE").toInt()
+        versionName = aiwaysVersion.getProperty("VERSION_NAME")
         setProperty("archivesBaseName", "${applicationId}_${versionName}")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         multiDexEnabled = true
@@ -128,6 +131,18 @@ android {
     }
 
     signingConfigs {
+        // Aiways: the launcher's preview key (PKCS12), so the launcher's signature-guarded
+        // HeadunitLink broadcast reaches this app. CI writes it from a secret; without it the
+        // build falls back to the normal debug key and the car's launcher will not talk to it.
+        System.getenv("AIWAYS_KEYSTORE")?.takeIf { file(it).exists() }?.let { ks ->
+            create("aiways") {
+                storeFile = file(ks)
+                storeType = "pkcs12"
+                storePassword = System.getenv("AIWAYS_KEYSTORE_PASSWORD") ?: "android"
+                keyAlias = System.getenv("AIWAYS_KEY_ALIAS") ?: "aiwayspreview"
+                keyPassword = System.getenv("AIWAYS_KEY_PASSWORD") ?: storePassword
+            }
+        }
         getByName("debug") {
             // storeFile = file("../keystore.jkc")
             // storePassword = property("HEADUNIT_KEYSTORE_PASSWORD") as String
@@ -188,6 +203,7 @@ android {
 
         getByName("debug") {
             // debugging setup
+            signingConfigs.findByName("aiways")?.let { signingConfig = it }
         }
     }
 
