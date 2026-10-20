@@ -5,6 +5,8 @@ import android.media.AudioFormat
 import android.media.AudioTrack
 import android.media.audiofx.Equalizer
 import android.os.Build
+import android.os.SystemClock
+import com.andrerinas.openheadunit.utils.AppLog
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
@@ -40,6 +42,8 @@ internal class AudioTrackPcmOutput(stream: Int, attachHwDsp: Boolean) : PcmOutpu
     private var equalizer: Equalizer? = null
     private val requestedBytes: Int
     private val position = PcmPlaybackPosition()
+    // Aiways: this head unit's output clock runs ~3.8 % slow; see OutputClockCorrector.
+    private val clock = OutputClockCorrector()
     // Lollipop exposes nonblocking writes for ByteBuffer, but not yet for short[]. Keep one
     // native-order conversion buffer per output, rather than allocating on the mixer thread.
     private val byteBuffer = if (Build.VERSION.SDK_INT in 21..22)
@@ -115,6 +119,7 @@ internal class AudioTrackPcmOutput(stream: Int, attachHwDsp: Boolean) : PcmOutpu
         (track as LegacyAudioTrack).allocatedFrames.coerceAtLeast(1)
 
     override fun pause() {
+        clock.reset()
         track.pause()
         // AOSP 4.1-4.3 AudioFlinger defers flush/reset until presentation completes. A fast
         // start can cancel that reset while the client already expects a zero head. Pause
@@ -138,6 +143,7 @@ internal class AudioTrackPcmOutput(stream: Int, attachHwDsp: Boolean) : PcmOutpu
         // frame-based drain for this output; it must not interrupt otherwise healthy playback.
         if (Build.VERSION.SDK_INT < 21)
             check(played >= 0) { "AudioTrack playback head reset or exceeded submitted PCM" }
+        correctClock(played)
         val size = if (Build.VERSION.SDK_INT >= 21) count else
             minOf(count, position.writableFrames(bufferFrames, head) * 2)
         if (size == 0) return 0
@@ -149,6 +155,19 @@ internal class AudioTrackPcmOutput(stream: Int, attachHwDsp: Boolean) : PcmOutpu
         if (written > 0) position.written(written.toLong() / 2)
         return written
     }
+    /** Aiways: play slightly faster than 48 kHz when the hardware consumes slower than real time. */
+    private fun correctClock(played: Long) {
+        val queued = if (played >= 0) position.writtenFrames - played else -1L
+        val next = clock.observe(SystemClock.elapsedRealtime(), if (queued >= 0) played else -1L, queued)
+        if (next <= 0) return
+        try {
+            val result = track.setPlaybackRate(next)
+            AppLog.i("AudioTrack: output clock correction, playback rate $next Hz (nominal 48000, result $result)")
+        } catch (e: Exception) {
+            AppLog.w("AudioTrack: playback rate $next refused: ${e.message}")
+        }
+    }
+
     private fun writeLollipop(data: ShortArray, offset: Int, count: Int): Int {
         val bytes = checkNotNull(byteBuffer)
         val shorts = checkNotNull(shortBuffer)
