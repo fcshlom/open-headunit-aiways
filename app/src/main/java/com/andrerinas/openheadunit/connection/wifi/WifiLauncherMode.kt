@@ -16,7 +16,9 @@ enum class WifiLauncherMode(
 
     companion object {
 
-        val DEFAULT: WifiLauncherMode = NATIVE
+        // Aiways: Native (Wi-Fi Direct / own hotspot) reboots the car's head unit the moment it
+        // starts; Headunit Server -> Manual connects without trouble.
+        val DEFAULT: WifiLauncherMode = MANUAL
 
 
         fun byIdOrDefault(id: Int): WifiLauncherMode {

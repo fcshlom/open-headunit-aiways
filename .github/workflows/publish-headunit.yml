@@ -1,0 +1,128 @@
+# Builds the Aiways head-unit build (package com.aiways.headunit, github debug) and uploads it to the
+# own backend's update channel "headunit" (aiways-monorepo backend/src/routes/appUpdate.ts). The app
+# on the car checks the backend at most every 6 h, whenever the launcher hands it its settings, and
+# installs a newer build (through root without a tap, else Android's installer asks once).
+#
+# The versionCode comes from aiways/version.properties: raise it with every change, the backend
+# refuses an older build and the car installs only a newer one (1..999).
+#
+# Repository secrets (Settings -> Secrets and variables -> Actions):
+#   AIWAYS_SIGNING_P12_BASE64   base64 of the launcher's preview key (Aiways_Luncher
+#                               tools/preview/preview-debug.p12; password "android", alias
+#                               aiwayspreview). Without it the APK is debug-signed and not published:
+#                               the launcher only talks to an app signed like itself.
+#   AIWAYS_ADMIN_USER, AIWAYS_ADMIN_PASSWORD   admin login of the backend (upload only)
+name: Publish Aiways head unit (self-update)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, 'claude/**']
+    paths: ['app/**', 'contract/**', 'aiways/**', 'gradle/**', '*.gradle.kts', '.github/workflows/publish-headunit.yml']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-headunit-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      SERVER: https://aiways.fcshlom.com
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - uses: android-actions/setup-android@v4
+        with:
+          packages: ''
+
+      # NDK/CMake pinned in app/build.gradle.kts (retried: sdkmanager downloads are sometimes corrupt)
+      - name: Install pinned NDK and CMake
+        run: |
+          for attempt in 1 2 3; do
+            sdkmanager "ndk;29.0.14206865" "cmake;3.22.1" && exit 0
+            echo "sdkmanager attempt $attempt failed; retrying in 15s..." >&2
+            sleep 15
+          done
+          exit 1
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Signing key
+        id: key
+        env:
+          P12: ${{ secrets.AIWAYS_SIGNING_P12_BASE64 }}
+        run: |
+          if [ -z "$P12" ]; then
+            echo "::warning::AIWAYS_SIGNING_P12_BASE64 missing: debug-signed build, not published."
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "$P12" | base64 -d > "$RUNNER_TEMP/aiways.p12"
+          echo "AIWAYS_KEYSTORE=$RUNNER_TEMP/aiways.p12" >> "$GITHUB_ENV"
+          echo "signed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Build
+        id: build
+        run: |
+          set -euo pipefail
+          . aiways/version.properties
+          ./gradlew :app:assembleGithubDebug --stacktrace
+          apk=$(ls app/build/outputs/apk/github/debug/*.apk | head -1)
+          cp "$apk" "$RUNNER_TEMP/Aiways-Headunit.apk"
+          echo "code=$VERSION_CODE" >> "$GITHUB_OUTPUT"
+          echo "name=$VERSION_NAME" >> "$GITHUB_OUTPUT"
+
+      # a copy in the run; not required (the account's artifact storage can be full)
+      - uses: actions/upload-artifact@v4
+        continue-on-error: true
+        with:
+          name: Aiways-Headunit-${{ steps.build.outputs.name }}
+          path: ${{ runner.temp }}/Aiways-Headunit.apk
+          retention-days: 3
+          if-no-files-found: error
+
+      - name: Upload to the backend
+        if: steps.key.outputs.signed == 'true'
+        env:
+          ADMIN_USER: ${{ secrets.AIWAYS_ADMIN_USER }}
+          ADMIN_PASSWORD: ${{ secrets.AIWAYS_ADMIN_PASSWORD }}
+          CODE: ${{ steps.build.outputs.code }}
+          NAME: ${{ steps.build.outputs.name }}
+        run: |
+          set -euo pipefail
+          if [ -z "$ADMIN_USER" ] || [ -z "$ADMIN_PASSWORD" ]; then
+            echo "::warning::AIWAYS_ADMIN_USER / AIWAYS_ADMIN_PASSWORD missing -- APK kept as artifact only."
+            exit 0
+          fi
+          body=$(jq -n --arg u "$ADMIN_USER" --arg p "$ADMIN_PASSWORD" '{username:$u, password:$p}')
+          token=$(curl -fsS --max-time 30 -X POST "$SERVER/auth/login" -H 'Content-Type: application/json' -d "$body" | jq -r '.token')
+          if [ -z "$token" ] || [ "$token" = "null" ]; then
+            echo "::error::Backend login failed."
+            exit 1
+          fi
+          echo "::add-mask::$token"
+          code=$(curl -sS -o resp.json -w '%{http_code}' --max-time 600 -X POST \
+            "$SERVER/app/release?abi=headunit&build=$CODE&versionName=$NAME" \
+            -H "Authorization: Bearer $token" -H 'Content-Type: application/octet-stream' \
+            --data-binary "@$RUNNER_TEMP/Aiways-Headunit.apk")
+          cat resp.json; echo
+          if [ "$code" = "409" ]; then
+            echo "::error::The backend already has a newer headunit build: raise VERSION_CODE in aiways/version.properties."
+            exit 1
+          fi
+          if [ "$code" = "400" ] && grep -q 'abi must be' resp.json; then
+            echo "::error::The backend has no 'headunit' channel yet (aiways-monorepo PR #65)."
+            exit 1
+          fi
+          [ "$code" -lt 300 ] || { echo "::error::Upload: HTTP $code"; exit 1; }
+          echo "Published headunit $NAME ($CODE)."
