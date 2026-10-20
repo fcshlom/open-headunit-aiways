@@ -41,7 +41,7 @@ internal class OutputClockCorrector(private val nominalRate: Int = 48000) {
         restart(nowMs, playedFrames)
         if (consumed <= 0 || starved) return 0
         val measured = consumed * 1000.0 / elapsed
-        val wanted = rate * nominalRate / measured
+        val wanted = rate.toDouble() * nominalRate / measured   // Int * Int overflows (48000 * 48000)
         val next = (rate + (wanted - rate) * GAIN).roundToInt()
             .coerceIn((nominalRate * (1 - MAX_CORRECTION)).roundToInt(), (nominalRate * (1 + MAX_CORRECTION)).roundToInt())
         if (abs(next - rate) < rate * DEADBAND) return 0
