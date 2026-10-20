@@ -82,6 +82,11 @@ jobs:
           echo "code=$VERSION_CODE" >> "$GITHUB_OUTPUT"
           echo "name=$VERSION_NAME" >> "$GITHUB_OUTPUT"
 
+      # Nothing reaches the car without passing the unit tests (aiways.4/.5 shipped an
+      # Int overflow in the audio clock correction that its own test had caught).
+      - name: Unit tests
+        run: ./gradlew :app:testGithubDebugUnitTest --stacktrace
+
       # a copy in the run; not required (the account's artifact storage can be full)
       - uses: actions/upload-artifact@v4
         continue-on-error: true
