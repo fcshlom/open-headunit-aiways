@@ -20,7 +20,7 @@ import org.json.JSONObject;
 /**
  * One round against the own backend, started by every launcher broadcast (about every 15 min):
  * uploads what the day logs gained (POST /launcher/logs, files headunit-YYYY-MM-DD.log), and at
- * most every 6 h asks for a newer build (channel "headunit": GET /app/latest?abi=headunit).
+ * most every hour asks for a newer build (channel "headunit": GET /app/latest?abi=headunit).
  *
  * A newer build is downloaded, checked against its sha256 and installed without a tap through
  * root (`su -c pm install -r`, the unit has /system/xbin/su); where that fails, Android's installer
@@ -28,7 +28,7 @@ import org.json.JSONObject;
  */
 public class AiwaysSyncService extends IntentService {
     private static final String CHANNEL = "headunit";
-    private static final long UPDATE_EVERY_MS = 6 * 3600 * 1000L;
+    private static final long UPDATE_EVERY_MS = 3600 * 1000L;   // a cheap GET; new builds arrive often while we tune
     private static final String PREF_LOG_SENT = "log_sent_";   // + file name: bytes the server has
     private static final String PREF_LAST_CHECK = "update_checked_at";
     private static final int LOG_CHUNK = 512 * 1024;
