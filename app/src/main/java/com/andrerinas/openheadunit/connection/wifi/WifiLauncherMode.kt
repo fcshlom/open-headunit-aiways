@@ -17,8 +17,10 @@ enum class WifiLauncherMode(
     companion object {
 
         // Aiways: Native (Wi-Fi Direct / own hotspot) reboots the car's head unit the moment it
-        // starts; Headunit Server -> Manual connects without trouble.
-        val DEFAULT: WifiLauncherMode = MANUAL
+        // starts. Headunit Server -> Auto finds the phone by itself, on the T-Box's Wi-Fi (head
+        // unit and phone both joined, the car's data keeps coming) as well as on the phone's
+        // hotspot (gateway probe). Its auto-hotspot option stays off by default.
+        val DEFAULT: WifiLauncherMode = AUTO
 
 
         fun byIdOrDefault(id: Int): WifiLauncherMode {
