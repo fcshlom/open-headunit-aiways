@@ -111,6 +111,61 @@ public final class AiwaysLog {
         }
     }
 
+    /**
+     * Day files written before the launcher sent the T-Box time carry the head unit's wrong date
+     * (2019-...) and would never be uploaded. Once the real time is known, their lines are moved
+     * into today's file, behind a marker, and the old files deleted. Runs on the writer thread, so
+     * it cannot interleave with new lines.
+     */
+    static void adoptStaleFiles() {
+        final Handler h = writer;
+        if (h == null) {
+            return;
+        }
+        h.post(new Runnable() {
+            @Override
+            public void run() {
+                File[] files = dir.listFiles();
+                if (files == null) {
+                    return;
+                }
+                Arrays.sort(files);
+                long now = AiwaysConfig.now();
+                for (File f : files) {
+                    if (!f.getName().matches("headunit-(19|20[01]|202[0-3])\\d*-\\d{2}-\\d{2}\\.log")) {
+                        continue;
+                    }
+                    try {
+                        byte[] body = new byte[(int) Math.min(f.length(), MAX_BYTES_PER_DAY)];
+                        java.io.FileInputStream in = new java.io.FileInputStream(f);
+                        try {
+                            int off = 0;
+                            int n;
+                            while (off < body.length && (n = in.read(body, off, body.length - off)) > 0) {
+                                off += n;
+                            }
+                        } finally {
+                            in.close();
+                        }
+                        append(now, "[log] --- lines from " + f.getName() + ", written before the T-Box time was known ---");
+                        File today = new File(dir, "headunit-" + new SimpleDateFormat("yyyy-MM-dd", Locale.US).format(new Date(now)) + ".log");
+                        FileOutputStream out = new FileOutputStream(today, true);
+                        try {
+                            out.write(body);
+                        } finally {
+                            out.close();
+                        }
+                        append(now, "[log] --- end of " + f.getName() + " ---");
+                        //noinspection ResultOfMethodCallIgnored
+                        f.delete();
+                    } catch (Exception ignored) {
+                        // try again on the next round
+                    }
+                }
+            }
+        });
+    }
+
     /** Deletes the oldest day files beyond KEEP_DAYS (by name: the clock can be off). */
     private static void prune() {
         writer.post(new Runnable() {

@@ -50,6 +50,7 @@ public class AiwaysSyncService extends IntentService {
         if (!AiwaysConfig.configured(this) || !AiwaysConfig.clockKnown(this)) {
             return;   // the launcher has not sent the key and the T-Box time yet
         }
+        AiwaysLog.adoptStaleFiles();
         AiwaysBackend backend = new AiwaysBackend(this);
         try {
             long bytes = uploadLogs(backend);
