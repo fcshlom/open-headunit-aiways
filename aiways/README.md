@@ -23,3 +23,11 @@ On every push to `main` or `claude/**`: build `githubDebug`, sign it with the la
   - `AIWAYS_SIGNING_P12_BASE64`: `base64 -w0 tools/preview/preview-debug.p12` from Aiways_Luncher.
   - `AIWAYS_ADMIN_USER`, `AIWAYS_ADMIN_PASSWORD`: same as in Aiways_Luncher.
 - The backend needs the `headunit` channel (aiways-monorepo PR #65).
+
+## Known settings for this head unit
+
+| Setting | Value | Why |
+|---|---|---|
+| Rendering backend (view mode) | **TextureView** (the default) | With SurfaceView, touches answered about 3 s late, most of all while navigating. Switching back to TextureView fixed it (reported from the car, November 2026). Do not change the default to SurfaceView. |
+
+If the picture reacts late again, check this setting first. With TextureView the logs of 21 Oct show the unit's own path is short: hardware decode about 50 ms, a video queue of a few frames, 22 of 30 frames per second displayed.
