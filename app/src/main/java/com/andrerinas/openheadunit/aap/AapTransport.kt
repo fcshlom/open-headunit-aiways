@@ -800,7 +800,6 @@ class AapTransport(
         nextReadTimingMs = 0L
         nextSendTimingMs = 0L
         uplinkStallMonitor.reset()
-        TouchLatencyMonitor.shared.reset()
         inboundRateMonitor.reset()
         bluetoothLinkMonitor.onSessionStart()
     }

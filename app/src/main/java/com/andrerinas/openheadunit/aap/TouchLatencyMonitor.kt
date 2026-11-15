@@ -9,14 +9,14 @@ package com.andrerinas.openheadunit.aap
  * the way back: if both stay small, the delay is on the phone.
  *
  * Fed from two threads (the UI thread sees the touch, the send thread writes it), hence the
- * locking. Says nothing in a window without a touch.
+ * locking. A window opens with its first touch, so it needs no reset between sessions and says
+ * nothing while the screen is not touched.
  *
  * **Diagnostic only - nothing reads the report.** Clock-free: the caller passes every time in.
  */
 class TouchLatencyMonitor {
 
     private var windowStartMs = 0L
-    private var started = false
     private var events = 0
     private var presses = 0
     private var sumInputMs = 0L
@@ -30,7 +30,7 @@ class TouchLatencyMonitor {
      */
     @Synchronized
     fun onTouch(inputDelayMs: Long, isPress: Boolean, nowMs: Long) {
-        arm(nowMs)
+        if (events == 0) windowStartMs = nowMs
         val delay = inputDelayMs.coerceAtLeast(0L)
         events++
         if (isPress) presses++
@@ -40,18 +40,19 @@ class TouchLatencyMonitor {
 
     /**
      * An input message left the socket after [queueMs] in the send queue and [writeMs] inside the
-     * write. Returns a report when a window of [WINDOW_MS] closes with touches in it.
+     * write. Returns a report once [WINDOW_MS] have passed since the window's first touch. Input
+     * messages outside a window (key presses with no touch) are not counted.
      */
     @Synchronized
     fun onSent(queueMs: Long, writeMs: Long, nowMs: Long): Report? {
-        arm(nowMs)
+        if (events == 0) return null
         if (queueMs > maxQueueMs) maxQueueMs = queueMs
         if (writeMs > maxWriteMs) maxWriteMs = writeMs
 
         val elapsedMs = nowMs - windowStartMs
         if (elapsedMs < WINDOW_MS) return null
 
-        val report = if (events == 0) null else Report(
+        val report = Report(
             windowMs = elapsedMs,
             presses = presses,
             events = events,
@@ -61,21 +62,7 @@ class TouchLatencyMonitor {
             maxWriteMs = maxWriteMs
         )
         clear()
-        windowStartMs = nowMs
         return report
-    }
-
-    @Synchronized
-    fun reset() {
-        started = false
-        windowStartMs = 0L
-        clear()
-    }
-
-    private fun arm(nowMs: Long) {
-        if (started) return
-        started = true
-        windowStartMs = nowMs
     }
 
     private fun clear() {

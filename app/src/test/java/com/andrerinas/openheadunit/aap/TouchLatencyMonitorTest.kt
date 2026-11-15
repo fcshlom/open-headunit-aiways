@@ -31,12 +31,13 @@ class TouchLatencyMonitorTest {
     }
 
     @Test
-    fun `each window starts clean`() {
+    fun `each window starts clean, at its first touch`() {
         val monitor = TouchLatencyMonitor()
         monitor.onTouch(500L, true, 0L)
         monitor.onSent(1L, 1L, 30_000L)
         monitor.onTouch(10L, true, 40_000L)
-        val report = monitor.onSent(1L, 1L, 60_001L)!!
+        assertNull(monitor.onSent(1L, 1L, 60_001L))
+        val report = monitor.onSent(1L, 1L, 70_000L)!!
         assertEquals(1, report.presses)
         assertEquals(10L, report.maxInputMs)
     }
