@@ -31,3 +31,23 @@ On every push to `main` or `claude/**`: build `githubDebug`, sign it with the la
 | Rendering backend (view mode) | **TextureView** (the default) | With SurfaceView, touches answered about 3 s late, most of all while navigating. Switching back to TextureView fixed it (reported from the car, November 2026). Do not change the default to SurfaceView. |
 
 If the picture reacts late again, check this setting first. With TextureView the logs of 21 Oct show the unit's own path is short: hardware decode about 50 ms, a video queue of a few frames, 22 of 30 frames per second displayed.
+
+## Reading the logs
+
+The day files (`headunit-YYYY-MM-DD.log`) reach the `car-logs` branch of fcshlom/Aiways_Luncher under `logs/<owner>/`. They arrive only while the launcher sends its `com.aiways.headunit.CONFIG` broadcast (launcher 4.69.6 and later).
+
+A tap's round trip, stage by stage, and the line that measures each one. All of them print about every 5 or 30 s during a session:
+
+| Stage | Line to search for | Healthy on this unit |
+|---|---|---|
+| Touch screen to the app, send queue, socket write | `touch latency over` (since aiways.8; only in windows with a touch) | a few ms each |
+| Uplink blocked | `uplink blocked on` (only when a write stalls) | absent |
+| Phone to unit: frames queued on the way | `video link lag over` (since aiways.8) | well under 200 ms; it is measured against the best moment of the session |
+| What the phone sends | `inbound rate over` | up to about 490 kB/s of video while a map moves |
+| Reader and video queue | `transport dispatch over` | `videoQueue` under 10, `videoShed=0`, `blocks=0` |
+| Decoder | `Throughput over` | 29-30 fps, `decodeLatency` about 50 ms, `dropped=0` |
+| Display | `TextureProjectionView: displayed` | 22 fps, `longFrames=0` |
+| Which renderer is in use | `Projection backend: viewMode=` | `TEXTURE` |
+| Session start and end | `session state` | `disconnected (link_lost)` means the Wi-Fi link dropped |
+
+If taps answer late: find the minute in the log and read the table top to bottom. The first stage that is far from its healthy value is where the time goes. If every stage is healthy, the delay is inside the phone.

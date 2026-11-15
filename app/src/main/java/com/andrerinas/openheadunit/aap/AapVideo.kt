@@ -39,6 +39,23 @@ internal class AapVideo(private val videoDecoder: VideoDecoder, private val sett
     private var lastKeyframeRequestMs = 0L
     private var lastAnomalyReportMs = 0L
 
+    /** How far the picture runs behind the phone's own frame clock. Diagnostic only. */
+    private val linkLagMonitor = VideoLinkLagMonitor()
+
+    /**
+     * Feeds [linkLagMonitor] from a message that opens a frame. Only the timestamped form carries
+     * the phone's capture time, in the eight big-endian bytes after the two-byte type.
+     */
+    private fun noteFrameTimestamp(buf: ByteArray, payloadOffset: Int) {
+        if (payloadOffset != VideoFragmentAssembler.OFFSET_TIMESTAMP_INDICATION) return
+        var timestampUs = 0L
+        for (i in VideoFragmentAssembler.OFFSET_MEDIA_INDICATION until payloadOffset) {
+            timestampUs = (timestampUs shl 8) or (buf[i].toLong() and 0xff)
+        }
+        linkLagMonitor.onFrame(timestampUs, android.os.SystemClock.elapsedRealtime())
+            ?.let { AppLog.i("AapVideo: %s", it) }
+    }
+
     /** Ordering rules for the fragment run. Pure and unit-tested; see [VideoFragmentAssembler]. */
     private val assembler = VideoFragmentAssembler()
 
@@ -283,12 +300,14 @@ internal class AapVideo(private val videoDecoder: VideoDecoder, private val sett
 
         return when (val action = decision.action) {
             is VideoFragmentAssembler.Action.DecodeWhole -> {
+                noteFrameTimestamp(buf, action.payloadOffset)
                 messageBuffer.clear()
                 videoDecoder.decode(buf, action.payloadOffset, len - action.payloadOffset, settings.forceSoftwareDecoding, settings.videoCodec)
                 true
             }
 
             is VideoFragmentAssembler.Action.BeginAssembly -> {
+                noteFrameTimestamp(buf, action.payloadOffset)
                 messageBuffer.clear()
                 val bytes = len - action.payloadOffset
                 if (ensureCapacity(bytes)) {
@@ -379,5 +398,6 @@ internal class AapVideo(private val videoDecoder: VideoDecoder, private val sett
         discardNextAssembly = false
         assembler.reset()
         lastAnomalyReportMs = 0L
+        linkLagMonitor.reset()
     }
 }

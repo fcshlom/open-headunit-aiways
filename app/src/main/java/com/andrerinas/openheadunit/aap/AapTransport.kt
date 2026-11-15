@@ -226,6 +226,10 @@ class AapTransport(
             AppLog.w(line)
             nextSendTimingMs = finishedMs + 1000
         }
+        if (channel == Channel.ID_INP) {
+            TouchLatencyMonitor.shared.onSent(queueMs, finishedMs - startedMs, finishedMs)
+                ?.let { report -> AppLog.i("AapTransport: %s", report) }
+        }
         uplinkStallMonitor.onWrite(finishedMs - startedMs, finishedMs)
             ?.let { report -> AppLog.i("AapTransport: %s", report) }
         return@Callback true
@@ -796,6 +800,7 @@ class AapTransport(
         nextReadTimingMs = 0L
         nextSendTimingMs = 0L
         uplinkStallMonitor.reset()
+        TouchLatencyMonitor.shared.reset()
         inboundRateMonitor.reset()
         bluetoothLinkMonitor.onSessionStart()
     }
