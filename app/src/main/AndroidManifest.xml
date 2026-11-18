@@ -48,9 +48,22 @@
         android:name="android.hardware.bluetooth"
         android:required="false" />
 
+    <!-- Guards the turn-by-turn broadcast (NavigationUpdateIntent). The name has to be the one the
+         broadcast is sent with, NavigationUpdateIntent.BROADCAST_PERMISSION, which is built from the
+         applicationId-independent HeadUnit.packageName. It was declared as
+         com.andrerinas.openheadunit.permission.NAVIGATION_UPDATE, a name nothing sends with, so the
+         permission the broadcast asked for existed nowhere and no app could ever receive it.
+         Aiways: the launcher declares the same permission (same key) and shows the next turn. -->
     <permission
-        android:name="com.andrerinas.openheadunit.permission.NAVIGATION_UPDATE"
+        android:name="com.andrerinas.headunitrevived.permission.NAVIGATION_UPDATE"
         android:protectionLevel="signature" />
+
+    <!-- Aiways: the launcher's backend settings (aiways/AiwaysConfigReceiver). Signature level:
+         the launcher and this app share a key, nothing else can send or read them. -->
+    <permission
+        android:name="com.aiways.permission.HEADUNIT_LINK"
+        android:protectionLevel="signature" />
+    <uses-permission android:name="com.aiways.permission.HEADUNIT_LINK" />
 
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
@@ -454,5 +467,17 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/provider_paths" />
         </provider>
+        <!-- Aiways: settings from the launcher, every ~15 min; drives log upload and self-update. -->
+        <receiver
+            android:name=".aiways.AiwaysConfigReceiver"
+            android:exported="true"
+            android:permission="com.aiways.permission.HEADUNIT_LINK">
+            <intent-filter>
+                <action android:name="com.aiways.headunit.CONFIG" />
+            </intent-filter>
+        </receiver>
+        <service
+            android:name=".aiways.AiwaysSyncService"
+            android:exported="false" />
     </application>
 </manifest>

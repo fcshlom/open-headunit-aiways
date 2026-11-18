@@ -2245,6 +2245,13 @@ class AapProjectionActivity : SurfaceActivity(), IProjectionView.Callbacks, Vide
             )
         }
 
+        // eventTime is the touch screen's own stamp on the uptime clock, so the difference is how
+        // long the event waited inside this unit before the app saw it.
+        TouchLatencyMonitor.shared.onTouch(
+            inputDelayMs = SystemClock.uptimeMillis() - event.eventTime,
+            isPress = event.actionMasked == MotionEvent.ACTION_DOWN,
+            nowMs = ts
+        )
         commManager.send(TouchEvent(ts, action, event.actionIndex, pointerData))
         // ACTION_UP only: a swipe-up-home or edge-back gesture ends in ACTION_CANCEL, and neither
         // must look like the text-field tap that opens Android Auto's phone keyboard.

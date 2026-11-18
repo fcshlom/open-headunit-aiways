@@ -33,6 +33,7 @@ app/src/main/java/com/andrerinas/openheadunit/decoder/audio/PcmOverlap.kt
 app/src/main/java/com/andrerinas/openheadunit/decoder/audio/MixerDuckingEnvelope.kt
 app/src/main/java/com/andrerinas/openheadunit/decoder/audio/MixerOutputLifecycle.kt
 app/src/main/java/com/andrerinas/openheadunit/decoder/audio/MixerSoftClipper.kt
+app/src/main/java/com/andrerinas/openheadunit/decoder/audio/OutputClockCorrector.kt
 app/src/main/java/com/andrerinas/openheadunit/decoder/audio/OutputBufferPolicy.kt
 app/src/main/java/com/andrerinas/openheadunit/decoder/audio/OutputBufferTuner.kt
 app/src/main/java/com/andrerinas/openheadunit/decoder/audio/OutputWriteWatchdog.kt

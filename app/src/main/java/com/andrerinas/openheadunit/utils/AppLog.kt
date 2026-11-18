@@ -268,6 +268,7 @@ object AppLog {
 
     private fun log(priority: Int, msg: String) {
         LOGGER.println(priority, TAG, msg)
+        com.andrerinas.openheadunit.aiways.AiwaysLog.line(priority, msg) // Aiways: day log for the backend
     }
 
     private fun isLoggable(priority: Int): Boolean = priority >= LOG_LEVEL
@@ -282,7 +283,9 @@ object AppLog {
      */
     private fun loge(message: String, tr: Throwable?) {
         val trace = if (tr != null) Log.getStackTraceString(tr) else ""
-        LOGGER.println(Log.ERROR, TAG, if (trace.isEmpty()) message else "$message\n$trace")
+        val line = if (trace.isEmpty()) message else "$message\n$trace"
+        LOGGER.println(Log.ERROR, TAG, line)
+        com.andrerinas.openheadunit.aiways.AiwaysLog.line(Log.ERROR, line) // Aiways: day log for the backend
     }
 
     private fun closeAppLogFileLogger() {

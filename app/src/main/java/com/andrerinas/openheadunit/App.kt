@@ -45,6 +45,9 @@ class App : Application(), Application.ActivityLifecycleCallbacks {
     override fun onCreate() {
         super.onCreate()
         instance = this
+        // Aiways: day logs for the backend and the clock correction the launcher last sent
+        com.andrerinas.openheadunit.aiways.AiwaysConfig.load(this)
+        com.andrerinas.openheadunit.aiways.AiwaysLog.init(this)
         registerActivityLifecycleCallbacks(this)
 
         try {

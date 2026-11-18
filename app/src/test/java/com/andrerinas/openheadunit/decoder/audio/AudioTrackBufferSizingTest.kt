@@ -18,7 +18,8 @@ class AudioTrackBufferSizingTest {
             val policy = OutputBufferPolicy(48000, 480, minimum)
             assertTrue(capacity >= policy.maximumFrames)
             assertTrue(capacity >= 19200)
-            assertEquals(minimum * 4, AudioTrackBufferSizing.allocationBytes(minimum, false))
+            assertEquals(maxOf(minimum, AudioTrackBufferSizing.LEGACY_FIXED_FRAMES) * 4,
+                AudioTrackBufferSizing.allocationBytes(minimum, false))
         }
     }
 
