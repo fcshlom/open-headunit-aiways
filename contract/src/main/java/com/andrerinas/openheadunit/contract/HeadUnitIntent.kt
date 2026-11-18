@@ -62,7 +62,9 @@ class ProjectionActivityRequest: Intent(action) {
  * so any app can receive by registering for [action] with RECEIVER_EXPORTED.
  *
  * Other apps: registerReceiver(receiver, IntentFilter(NavigationUpdateIntent.action), RECEIVER_EXPORTED)
- * No special permission required.
+ * The broadcast is sent with [BROADCAST_PERMISSION], a signature permission: only an app signed
+ * with the same key and holding it (`<uses-permission>`) receives it. After a stop of the
+ * guidance it is sent once more with no distance (-1) and no road.
  *
  * @param nextEventType **Deprecated (legacy):** wire values for AA `NextTurnDetail.NextEvent` (see [EXTRA_NEXT_EVENT_TYPE]).
  *   Mapped from instrument-cluster `NavigationManeuver` when the old message is absent; scheduled for removal — migrate
