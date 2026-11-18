@@ -18,7 +18,11 @@ class NavigationPermissionTest {
         val manifest = listOf("src/main/AndroidManifest.xml", "app/src/main/AndroidManifest.xml")
             .map { File(it) }
             .first { it.exists() }
-        val doc = DocumentBuilderFactory.newInstance().apply { isNamespaceAware = true }
+        val doc = DocumentBuilderFactory.newInstance().apply {
+            isNamespaceAware = true
+            // the manifest has no DOCTYPE; refuse one so no external entity is ever resolved
+            setFeature("http://apache.org/xml/features/disallow-doctype-decl", true)
+        }
             .newDocumentBuilder().parse(manifest)
         val permissions = doc.getElementsByTagName("permission")
         val declared = (0 until permissions.length).map {
