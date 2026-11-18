@@ -48,8 +48,14 @@
         android:name="android.hardware.bluetooth"
         android:required="false" />
 
+    <!-- Guards the turn-by-turn broadcast (NavigationUpdateIntent). The name has to be the one the
+         broadcast is sent with, NavigationUpdateIntent.BROADCAST_PERMISSION, which is built from the
+         applicationId-independent HeadUnit.packageName. It was declared as
+         com.andrerinas.openheadunit.permission.NAVIGATION_UPDATE, a name nothing sends with, so the
+         permission the broadcast asked for existed nowhere and no app could ever receive it.
+         Aiways: the launcher declares the same permission (same key) and shows the next turn. -->
     <permission
-        android:name="com.andrerinas.openheadunit.permission.NAVIGATION_UPDATE"
+        android:name="com.andrerinas.headunitrevived.permission.NAVIGATION_UPDATE"
         android:protectionLevel="signature" />
 
     <!-- Aiways: the launcher's backend settings (aiways/AiwaysConfigReceiver). Signature level:
