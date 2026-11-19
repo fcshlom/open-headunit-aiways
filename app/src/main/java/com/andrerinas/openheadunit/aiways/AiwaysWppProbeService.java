@@ -21,9 +21,9 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Date;
 import java.util.Enumeration;
-import java.util.LinkedList;
 import java.util.List;
 import java.util.Locale;
+import java.util.concurrent.LinkedBlockingDeque;
 import javax.net.ssl.SSLSocket;
 
 /**
@@ -48,7 +48,8 @@ public class AiwaysWppProbeService extends Service {
     private static final int TLS_TIMEOUT_MS = 10_000;
     private static final long HOLD_AFTER_TLS_MS = 3000L;
 
-    private static final LinkedList<String> EVENTS = new LinkedList<String>();
+    /** Newest first. A thread-safe deque, so the screen's copy needs no lock of its own. */
+    private static final LinkedBlockingDeque<String> EVENTS = new LinkedBlockingDeque<String>();
     private static volatile String status = "stopped";
     private static volatile int dials;
 
@@ -80,9 +81,7 @@ public class AiwaysWppProbeService extends Service {
 
     /** The newest events first, for the test screen. */
     public static List<String> recentEvents() {
-        synchronized (EVENTS) {
-            return new ArrayList<String>(EVENTS);
-        }
+        return new ArrayList<String>(EVENTS);
     }
 
     public static String status() {
@@ -234,11 +233,9 @@ public class AiwaysWppProbeService extends Service {
 
     private static void event(String message) {
         String stamp = new SimpleDateFormat("HH:mm:ss", Locale.US).format(new Date());
-        synchronized (EVENTS) {
-            EVENTS.addFirst(stamp + "  " + message);
-            while (EVENTS.size() > MAX_EVENTS) {
-                EVENTS.removeLast();
-            }
+        EVENTS.addFirst(stamp + "  " + message);
+        while (EVENTS.size() > MAX_EVENTS) {
+            EVENTS.pollLast();
         }
         AiwaysLog.event("wpp-test", message);
     }

@@ -277,26 +277,42 @@ public class AiwaysWirelessSetupActivity extends Activity {
         }, "aiways-wpp-gather").start();
     }
 
-    /** One Wi-Fi scan, given a few seconds to land; empty when Wi-Fi is off. */
+    /**
+     * The access points around, for the T-Box's BSSID; empty when Wi-Fi is off.
+     *
+     * The results the system already holds come first. A new scan is asked for only when the T-Box
+     * is not among them, and given a few seconds to land. This unit runs Android 4.4, where
+     * startScan() is neither deprecated nor throttled (both came with Android 9); should a scan
+     * still come back empty, the screen says so and the BSSID can be typed by hand.
+     */
     private static List<AiwaysWirelessSetup.Ap> scan(Context context) {
-        List<AiwaysWirelessSetup.Ap> out = new ArrayList<AiwaysWirelessSetup.Ap>();
         try {
             WifiManager wifi = (WifiManager) context.getSystemService(Context.WIFI_SERVICE);
             if (wifi == null || !wifi.isWifiEnabled()) {
-                return out;
+                return new ArrayList<AiwaysWirelessSetup.Ap>();
+            }
+            List<AiwaysWirelessSetup.Ap> cached = results(wifi);
+            if (AiwaysWirelessSetup.tboxSsidFromScan(cached) != null) {
+                return cached;
             }
             wifi.startScan();
             Thread.sleep(SCAN_SETTLE_MS);
-            List<ScanResult> results = wifi.getScanResults();
-            if (results != null) {
-                for (ScanResult r : results) {
-                    out.add(new AiwaysWirelessSetup.Ap(r.SSID, r.BSSID, r.level));
-                }
-            }
+            return results(wifi);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         } catch (Exception ignored) {
             // no scan; the screen asks for the BSSID by hand
+        }
+        return new ArrayList<AiwaysWirelessSetup.Ap>();
+    }
+
+    private static List<AiwaysWirelessSetup.Ap> results(WifiManager wifi) {
+        List<AiwaysWirelessSetup.Ap> out = new ArrayList<AiwaysWirelessSetup.Ap>();
+        List<ScanResult> results = wifi.getScanResults();
+        if (results != null) {
+            for (ScanResult r : results) {
+                out.add(new AiwaysWirelessSetup.Ap(r.SSID, r.BSSID, r.level));
+            }
         }
         return out;
     }
@@ -319,6 +335,15 @@ public class AiwaysWirelessSetupActivity extends Activity {
             ip = AiwaysWppProbeService.usbLink()[0];
             usbIp = ip;
         }
+        // Each field checked here, so the screen names the one to fix; build() checks them again.
+        if (ssid.isEmpty() || key.isEmpty()) {
+            showError("חסרים שם ה-Wi-Fi של ה-T-Box או הסיסמה שלו.");
+            return;
+        }
+        if (bssid == null || !SoftApBssidPolicy.INSTANCE.isUsable(bssid)) {
+            showError("ה-BSSID חסר או לא תקין (6 זוגות של ספרות הקסדצימליות, למשל AA:BB:CC:11:22:33).");
+            return;
+        }
         if (bt == null || !SoftApBssidPolicy.INSTANCE.isUsable(bt)) {
             showError("כתובת ה-Bluetooth חסרה או לא תקינה.");
             return;
@@ -328,7 +353,7 @@ public class AiwaysWirelessSetupActivity extends Activity {
             return;
         }
         ProjectionDeepLink.Result result = ProjectionDeepLink.INSTANCE.build(
-                ssid, key, bssid == null ? "" : bssid, ip, AiwaysWirelessSetup.WPP_PORT, bt);
+                ssid, key, bssid, ip, AiwaysWirelessSetup.WPP_PORT, bt);
         if (result instanceof ProjectionDeepLink.Result.Failed) {
             showError(((ProjectionDeepLink.Result.Failed) result).getInvalid().getReason());
             return;

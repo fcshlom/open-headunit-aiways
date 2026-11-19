@@ -8,6 +8,7 @@ import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.net.Socket;
+import java.nio.charset.Charset;
 
 /**
  * Reads one small text file from the T-Box over its FTP server, with the factory login the
@@ -19,6 +20,12 @@ final class AiwaysTboxFtp {
     private static final String PASS = "oelinux123";
     private static final int TIMEOUT_MS = 4000;
     private static final int MAX_BYTES = 64 * 1024;
+    /**
+     * The FTP control channel is byte-for-byte ASCII; the file is UTF-8. Looked up once here rather
+     * than taken from java.nio.charset.StandardCharsets, which needs API 19 (this flavor: minSdk 16).
+     */
+    private static final Charset CONTROL = Charset.forName("ISO-8859-1");
+    private static final Charset CONTENT = Charset.forName("UTF-8");
 
     private AiwaysTboxFtp() {
     }
@@ -29,7 +36,7 @@ final class AiwaysTboxFtp {
         try {
             control.connect(new InetSocketAddress(host, PORT), TIMEOUT_MS);
             control.setSoTimeout(TIMEOUT_MS);
-            BufferedReader in = new BufferedReader(new InputStreamReader(control.getInputStream(), "ISO-8859-1"));
+            BufferedReader in = new BufferedReader(new InputStreamReader(control.getInputStream(), CONTROL));
             OutputStream out = control.getOutputStream();
             expect(in, null, out, 220);
             expect(in, "USER " + USER, out, 331);
@@ -59,7 +66,7 @@ final class AiwaysTboxFtp {
                         throw new IOException("FTP RETR: " + path + " is larger than " + MAX_BYTES + " bytes");
                     }
                 }
-                return buf.toString("UTF-8");
+                return new String(buf.toByteArray(), CONTENT);
             } finally {
                 closeQuietly(data);
             }
@@ -81,7 +88,7 @@ final class AiwaysTboxFtp {
     }
 
     private static void send(OutputStream out, String cmd) throws IOException {
-        out.write((cmd + "\r\n").getBytes("ISO-8859-1"));
+        out.write((cmd + "\r\n").getBytes(CONTROL));
         out.flush();
     }
 

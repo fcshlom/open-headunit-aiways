@@ -5,6 +5,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.ServiceConnection;
 import android.os.IBinder;
+import android.os.Looper;
 import android.os.Parcel;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -36,8 +37,14 @@ final class AiwaysAdayoBt {
     private AiwaysAdayoBt() {
     }
 
-    /** Blocks up to [timeoutMs] for the service; call off the main thread. */
+    /**
+     * Blocks up to [timeoutMs] for the service, so it refuses to run on the main thread: the
+     * connection callback is delivered there, and waiting on it would only freeze the screen.
+     */
     static Identity read(Context context, long timeoutMs) {
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            return new Identity(null, null, "read() was called on the main thread");
+        }
         final Context app = context.getApplicationContext();
         final CountDownLatch connected = new CountDownLatch(1);
         final IBinder[] holder = new IBinder[1];

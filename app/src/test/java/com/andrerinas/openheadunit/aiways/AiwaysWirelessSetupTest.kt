@@ -45,6 +45,16 @@ class AiwaysWirelessSetupTest {
     }
 
     @Test
+    fun `the daemon config reads the same with any line ending`() {
+        for (eol in listOf("\n", "\r\n", "\r")) {
+            val conf = AiwaysWirelessSetup.parseConf("wifi_ssid = MyAiways-X2TMW${eol}wifi_key = k1${eol}${eol}# end$eol")
+            assertEquals("line ending ${eol.toByteArray().toList()}", "MyAiways-X2TMW", conf["wifi_ssid"])
+            assertEquals("line ending ${eol.toByteArray().toList()}", "k1", conf["wifi_key"])
+            assertEquals(2, conf.size)
+        }
+    }
+
+    @Test
     fun `the strongest access point with the exact name gives the BSSID`() {
         val scan = listOf(
             AiwaysWirelessSetup.Ap("MyAiways-X2TMW", "aa:bb:cc:00:00:01", -70),

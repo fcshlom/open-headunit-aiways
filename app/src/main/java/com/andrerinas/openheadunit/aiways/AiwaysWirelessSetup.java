@@ -84,9 +84,10 @@ public final class AiwaysWirelessSetup {
         if (text == null) {
             return out;
         }
-        for (String line : text.split("\n")) {
+        // Any line ending: LF (the T-Box), CRLF (a file edited on Windows) or a lone CR.
+        for (String line : text.split("\r\n|\n|\r")) {
             String p = line.replaceFirst("^[ \t]+", "");
-            if (p.isEmpty() || p.charAt(0) == '#' || p.charAt(0) == ';' || p.charAt(0) == '\r') {
+            if (p.isEmpty() || p.charAt(0) == '#' || p.charAt(0) == ';') {
                 continue;
             }
             int eq = p.indexOf('=');
@@ -94,7 +95,7 @@ public final class AiwaysWirelessSetup {
                 continue;
             }
             String key = p.substring(0, eq).replaceFirst("[ \t]+$", "");
-            String value = p.substring(eq + 1).replaceFirst("^[ \t]+", "").replaceFirst("[\r\n \t]+$", "");
+            String value = p.substring(eq + 1).replaceFirst("^[ \t]+", "").replaceFirst("[ \t]+$", "");
             out.put(key, value);
         }
         return out;
