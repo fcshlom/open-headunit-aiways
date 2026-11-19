@@ -208,7 +208,9 @@ public class AiwaysWppProbeService extends Service {
         SSLSocket tls = null;
         try {
             raw.setSoTimeout(TLS_TIMEOUT_MS);
-            tls = WppTcpTls.INSTANCE.clientSocket(SslContextFactory.INSTANCE.create(this).getSocketFactory(), raw);
+            // The application context: this runs on a dial thread that can outlive the service.
+            tls = WppTcpTls.INSTANCE.clientSocket(
+                    SslContextFactory.INSTANCE.create(getApplicationContext()).getSocketFactory(), raw);
             tls.startHandshake();
             event("TLS with " + from + " ok, " + tls.getSession().getProtocol() + ", phone certificate: "
                     + peerSubject(tls.getSession().getPeerCertificates()));
@@ -226,7 +228,7 @@ public class AiwaysWppProbeService extends Service {
             return "none";
         }
         if (chain[0] instanceof X509Certificate) {
-            return ((X509Certificate) chain[0]).getSubjectDN().getName();
+            return ((X509Certificate) chain[0]).getSubjectX500Principal().getName();
         }
         return chain[0].getType();
     }
