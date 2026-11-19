@@ -24,6 +24,11 @@ import java.util.Enumeration;
 import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.LinkedBlockingDeque;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.SynchronousQueue;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 import javax.net.ssl.SSLSocket;
 
 /**
@@ -47,6 +52,7 @@ public class AiwaysWppProbeService extends Service {
     private static final long BIND_RETRY_MS = 1000L;
     private static final int TLS_TIMEOUT_MS = 10_000;
     private static final long HOLD_AFTER_TLS_MS = 3000L;
+    private static final int MAX_DIAL_THREADS = 4;
 
     /** Newest first. A thread-safe deque, so the screen's copy needs no lock of its own. */
     private static final LinkedBlockingDeque<String> EVENTS = new LinkedBlockingDeque<String>();
@@ -55,6 +61,21 @@ public class AiwaysWppProbeService extends Service {
 
     private volatile boolean running;
     private volatile ServerSocket server;
+
+    /**
+     * Handshakes run here, at most [MAX_DIAL_THREADS] at once, so a burst of dials cannot start
+     * threads without bound; a dial beyond that is logged and closed. One phone dials once per
+     * Bluetooth connect, so the cap is never reached in the test itself.
+     */
+    private final ThreadPoolExecutor dialPool = new ThreadPoolExecutor(0, MAX_DIAL_THREADS,
+            30L, TimeUnit.SECONDS, new SynchronousQueue<Runnable>(), new ThreadFactory() {
+                @Override
+                public Thread newThread(Runnable r) {
+                    Thread t = new Thread(r, "aiways-wpp-dial");
+                    t.setDaemon(true);
+                    return t;
+                }
+            });
 
     /** Arms or disarms the test; arming starts the listener now, disarming stops it. */
     public static void setArmed(Context context, boolean armed) {
@@ -142,6 +163,7 @@ public class AiwaysWppProbeService extends Service {
     public void onDestroy() {
         running = false;
         closeQuietly(server);
+        dialPool.shutdownNow();
         status = "stopped";
         super.onDestroy();
     }
@@ -186,14 +208,18 @@ public class AiwaysWppProbeService extends Service {
                 }
                 continue;
             }
-            Thread t = new Thread(new Runnable() {
-                @Override
-                public void run() {
-                    handle(socket);
-                }
-            }, "aiways-wpp-dial");
-            t.setDaemon(true);
-            t.start();
+            try {
+                dialPool.execute(new Runnable() {
+                    @Override
+                    public void run() {
+                        handle(socket);
+                    }
+                });
+            } catch (RejectedExecutionException e) {
+                event("dial from " + socket.getInetAddress() + " turned away: " + MAX_DIAL_THREADS
+                        + " handshakes are already running");
+                closeQuietly(socket);
+            }
         }
         closeQuietly(s);
     }
