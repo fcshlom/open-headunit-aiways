@@ -479,5 +479,23 @@
         <service
             android:name=".aiways.AiwaysSyncService"
             android:exported="false" />
+        <!-- Aiways: wireless setup test (AIWAYS.md, stage B). Its own icon in the launcher's app
+             list; the listener runs only while the test is armed from that screen. -->
+        <activity
+            android:name=".aiways.AiwaysWirelessSetupActivity"
+            android:exported="true"
+            android:label="AA wireless test"
+            android:screenOrientation="landscape"
+            android:taskAffinity="com.aiways.headunit.wirelesstest"
+            android:theme="@android:style/Theme.Holo.NoActionBar.Fullscreen"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+        <service
+            android:name=".aiways.AiwaysWppProbeService"
+            android:exported="false" />
     </application>
 </manifest>
