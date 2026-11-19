@@ -52,3 +52,22 @@ A tap's round trip, stage by stage, and the line that measures each one. All of 
 | Session start and end | `session state` | `disconnected (link_lost)` means the Wi-Fi link dropped |
 
 If taps answer late: find the minute in the log and read the table top to bottom. The first stage that is far from its healthy value is where the time goes. If every stage is healthy, the delay is inside the phone.
+
+## Wireless setup test (4.0.0-aiways.10)
+
+Stage B of "Wireless the standard way" in [AIWAYS.md](../AIWAYS.md): does Android Auto dial this unit by itself, once the phone has scanned the setup QR, when the phone's Bluetooth connects to the car? The test only listens; it never starts a projection, so Headunit Server keeps working as before.
+
+| Part | Where | What |
+|---|---|---|
+| Screen | `AiwaysWirelessSetupActivity`, icon "AA wireless test" in the launcher's app list | Reads the T-Box AP's name and key from `/usrdata/tbox_daemon.conf` (FTP), its BSSID from a Wi-Fi scan, this unit's `usb0` address, and Adayo's Bluetooth address (`IBTService` 31). Every field can be corrected by hand. "Show QR and start" draws Android Auto's setup QR (`ProjectionDeepLink`, port 5299) and arms the listener |
+| Listener | `AiwaysWppProbeService` | Port 5299, only while armed. The launcher's CONFIG broadcast restarts it after a reboot. Each dial is logged, then TLS is opened as the client (the role the phone expects) to log the phone's certificate, and the connection is closed |
+
+In the car:
+
+1. Car on, phone connected to the car's Bluetooth as usual. Open "AA wireless test" and check the fields.
+2. "Show QR and start", then scan the QR with the phone's camera. Android Auto opens: confirm.
+3. Switch the phone's Bluetooth off and on, with the car still on. The unit's `usb0` address changes on every boot, so a reboot would send the phone to an old address. That is why this step does not switch the car off.
+4. Success is a `DIAL from 192.168.1.x` line on the screen, followed by `TLS ... ok`.
+5. Undo: on the phone, Android Auto settings > Previously connected cars > forget the car. Then "Stop the test" on the unit. Until then the phone may keep dialling the unit whenever it connects to the car.
+
+In the day log, look for `[wpp-test]`: what was read (the key never goes to the log), the QR's values, and every dial.
