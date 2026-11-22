@@ -62,7 +62,8 @@ class AapNavigation(
                     snapshot.nextTurnDetail = AapNavigationHelper.TimedMessage(detail, helper.nowElapsedRealtimeMs())
                     AppLog.d(
                         "Nav: NextTurnDetail road=${detail.road} " +
-                                "hasNextTurn=${detail.hasNextTurn()} nextTurn=${detail.nextTurn}"
+                                "hasNextTurn=${detail.hasNextTurn()} nextTurn=${detail.nextTurn} " +
+                                "image=${if (detail.hasImage()) "${detail.image.size()} bytes" else "none"}"
                     )
                     scheduleDebouncedBroadcast(NAV_EVENT_TYPE_TURN)
                     if (settings.showNavigationNotifications) {
