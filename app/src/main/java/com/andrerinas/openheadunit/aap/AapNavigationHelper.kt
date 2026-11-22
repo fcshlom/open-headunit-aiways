@@ -61,7 +61,9 @@ class AapNavigationHelper(
         val totalDistanceMeters: Int?,
         val totalTimeSeconds: Long?,
         val estimatedArrival: String?,
-        val turnImage: ByteArray?
+        val turnImage: ByteArray?,
+        val laneShapes: IntArray?,
+        val cueText: String?
     )
 
     fun nowElapsedRealtimeMs(): Long = SystemClock.elapsedRealtime()
@@ -83,7 +85,9 @@ class AapNavigationHelper(
             estimatedArrival = prepared.estimatedArrival,
             currentRoad = prepared.currentRoad,
             maneuverType = prepared.nextManeuver,
-            turnImage = prepared.turnImage
+            turnImage = prepared.turnImage,
+            laneShapes = prepared.laneShapes,
+            cueText = prepared.cueText
         )
         context.applicationContext.sendBroadcast(intent, NavigationUpdateIntent.BROADCAST_PERMISSION)
     }
@@ -157,6 +161,12 @@ class AapNavigationHelper(
         val turnAngle = maneuver?.takeIf { it.hasRoundaboutExitAngle() }?.roundaboutExitAngle
             ?: detail?.takeIf { it.hasTurnAngle() }?.turnAngle
         val turnImage = detail?.takeIf { it.hasImage() && !it.image.isEmpty }?.image?.toByteArray()
+        val firstStep = state?.stepsList?.firstOrNull()
+        val laneShapes = firstStep?.lanesList
+            ?.flatMap { lane -> lane.laneDirectionsList.filter { it.isHighlighted && it.hasShape() }.map { it.shape.number } }
+            ?.takeIf { it.isNotEmpty() }
+            ?.toIntArray()
+        val cueText = firstStep?.takeIf { it.hasCue() }?.cue?.alternateTextList?.firstOrNull()?.takeIf { it.isNotBlank() }
 val actionText = state?.stepsList?.firstOrNull()?.maneuver?.type?.let { maneuverTypeToAction(it) }
     ?: detail?.takeIf { it.hasNextTurn() }?.let { nextEventToAction(it.nextTurn) }
     ?: context.getString(R.string.nav_action_unknown)
@@ -199,7 +209,9 @@ val actionText = state?.stepsList?.firstOrNull()?.maneuver?.type?.let { maneuver
             totalDistanceMeters = totalDistanceMeters,
             totalTimeSeconds = totalTimeSeconds,
             estimatedArrival = estimatedArrival,
-            turnImage = turnImage
+            turnImage = turnImage,
+            laneShapes = laneShapes,
+            cueText = cueText
         )
     }
 

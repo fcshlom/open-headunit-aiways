@@ -76,8 +76,10 @@ In the day log, look for `[wpp-test]`: what was read (the key never goes to the 
 
 The launcher draws the next turn on the driver's display. From the codes alone it cannot draw a roundabout right: "exit 2" is a left turn in a roundabout with three arms and straight ahead in one with four, and the phone has sent no exit angle so far (`turn_angle` 0 in every launcher log). So the navigation service is now announced as `CustomImageSupported` with 256 x 256, 32-bit images, instead of `ImageCodesOnly`. A nav app that honours it sends its own picture of the next turn in `NextTurnDetail.image` (PNG).
 
-The `NAVIGATION_UPDATE` broadcast carries two new extras:
+The `NAVIGATION_UPDATE` broadcast carries four new extras:
 - `turn_image`: the PNG bytes, only when the phone sent a picture.
 - `maneuver_type`: the instrument-cluster `NavigationManeuver.NavigationType` of the next step, or -1 (34 = roundabout anticlockwise, 35 = the same with an exit angle).
+- `lane_shapes`: the directions of the highlighted lanes of the next step (`LaneDirection.Shape`: 1 straight, 4/5 left/right, ...). Waze gives some roundabouts "turn left / straight / right" instructions instead of an exit number; the highlighted lane then says which way the exit goes, even without an angle.
+- `cue_text`: the nav app's own text for the next step (`NavigationCue.alternate_text`), or empty.
 
 `turn_number` and `turn_angle` now come only from fields the phone really set. An unset proto2 int reads 0, which used to hide the legacy `NextTurnDetail` values. The log line `Nav: NextTurnDetail` shows `image=<n> bytes` or `image=none`.
