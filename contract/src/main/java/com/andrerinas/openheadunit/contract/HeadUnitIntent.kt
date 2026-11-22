@@ -87,7 +87,11 @@ class NavigationUpdateIntent(
     totalDistanceMeters: Int? = null,
     totalTimeSeconds: Long? = null,
     estimatedArrival: String? = null,
-    currentRoad: String = ""
+    currentRoad: String = "",
+    maneuverType: Int? = null,
+    turnImage: ByteArray? = null,
+    laneShapes: IntArray? = null,
+    cueText: String? = null
 ) : Intent(action) {
     init {
         putExtra(EXTRA_DISTANCE_METERS, distanceMeters?.takeIf { it >= 0 } ?: -1)
@@ -102,6 +106,10 @@ class NavigationUpdateIntent(
         putExtra(EXTRA_TOTAL_DISTANCE_METERS, totalDistanceMeters?.takeIf { it >= 0 } ?: -1)
         putExtra(EXTRA_TOTAL_TIME_SECONDS, totalTimeSeconds?.takeIf { it >= 0 } ?: -1L)
         putExtra(EXTRA_ESTIMATED_ARRIVAL, estimatedArrival?.ifBlank { null } ?: "")
+        putExtra(EXTRA_MANEUVER_TYPE, maneuverType?.takeIf { it >= 0 } ?: -1)
+        turnImage?.takeIf { it.isNotEmpty() }?.let { putExtra(EXTRA_TURN_IMAGE, it) }
+        laneShapes?.takeIf { it.isNotEmpty() }?.let { putExtra(EXTRA_LANE_SHAPES, it) }
+        putExtra(EXTRA_CUE_TEXT, cueText?.ifBlank { null } ?: "")
     }
 
     companion object {
@@ -158,6 +166,29 @@ class NavigationUpdateIntent(
          * Estimated time at arrival as provided by the nav app (`estimated_time_at_arrival` string), or empty.
          */
         const val EXTRA_ESTIMATED_ARRIVAL = "estimated_arrival"
+
+        /**
+         * Instrument-cluster `NavigationManeuver.NavigationType` of the next step (e.g. 34 =
+         * ROUNDABOUT_ENTER_AND_EXIT_CCW, 35 = the same with an exit angle), or -1 if not sent.
+         */
+        const val EXTRA_MANEUVER_TYPE = "maneuver_type"
+
+        /**
+         * The nav app's own picture of the next turn (`NextTurnDetail.image`, PNG, asked for at 256 x 256),
+         * present only when the phone sent one.
+         */
+        const val EXTRA_TURN_IMAGE = "turn_image"
+
+        /**
+         * The highlighted lane directions of the next step (`NavigationLane.LaneDirection.Shape`: 1 straight,
+         * 2/3 slight left/right, 4/5 left/right, 6/7 sharp left/right, 8/9 U-turn left/right), the lanes to take,
+         * left to right, one per highlighted direction; absent when the phone sent no lanes. At a roundabout
+         * without an exit angle they still say which way the exit goes (a "turn left" roundabout in Waze).
+         */
+        const val EXTRA_LANE_SHAPES = "lane_shapes"
+
+        /** The nav app's own text for the next step (`NavigationCue.alternate_text`, the first), or empty. */
+        const val EXTRA_CUE_TEXT = "cue_text"
 
         /**
          * Signature-level permission required to receive or send [NavigationUpdateIntent] broadcasts.

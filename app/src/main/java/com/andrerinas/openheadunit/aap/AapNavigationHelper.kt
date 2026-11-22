@@ -60,7 +60,10 @@ class AapNavigationHelper(
         val nextManeuver: Int?,
         val totalDistanceMeters: Int?,
         val totalTimeSeconds: Long?,
-        val estimatedArrival: String?
+        val estimatedArrival: String?,
+        val turnImage: ByteArray?,
+        val laneShapes: IntArray?,
+        val cueText: String?
     )
 
     fun nowElapsedRealtimeMs(): Long = SystemClock.elapsedRealtime()
@@ -80,7 +83,11 @@ class AapNavigationHelper(
             totalDistanceMeters = prepared.totalDistanceMeters,
             totalTimeSeconds = prepared.totalTimeSeconds,
             estimatedArrival = prepared.estimatedArrival,
-            currentRoad = prepared.currentRoad
+            currentRoad = prepared.currentRoad,
+            maneuverType = prepared.nextManeuver,
+            turnImage = prepared.turnImage,
+            laneShapes = prepared.laneShapes,
+            cueText = prepared.cueText
         )
         context.applicationContext.sendBroadcast(intent, NavigationUpdateIntent.BROADCAST_PERMISSION)
     }
@@ -147,10 +154,19 @@ class AapNavigationHelper(
             ?.number
             ?: maneuverType?.let { maneuverTypeToLegacyTurnSide(it) }
         val nextManeuver = state?.stepsList?.firstOrNull()?.maneuver?.type?.number
-        val turnNumber = state?.stepsList?.firstOrNull()?.maneuver?.roundaboutExitNumber
+        // only fields the phone really set: an unset proto2 int reads 0, which hid the legacy values
+        val maneuver = state?.stepsList?.firstOrNull()?.takeIf { it.hasManeuver() }?.maneuver
+        val turnNumber = maneuver?.takeIf { it.hasRoundaboutExitNumber() }?.roundaboutExitNumber
             ?: detail?.takeIf { it.hasTurnNumber() }?.turnNumber
-        val turnAngle = state?.stepsList?.firstOrNull()?.maneuver?.roundaboutExitAngle
+        val turnAngle = maneuver?.takeIf { it.hasRoundaboutExitAngle() }?.roundaboutExitAngle
             ?: detail?.takeIf { it.hasTurnAngle() }?.turnAngle
+        val turnImage = detail?.takeIf { it.hasImage() && !it.image.isEmpty }?.image?.toByteArray()
+        val firstStep = state?.stepsList?.firstOrNull()
+        val laneShapes = firstStep?.lanesList
+            ?.flatMap { lane -> lane.laneDirectionsList.filter { it.isHighlighted && it.hasShape() }.map { it.shape.number } }
+            ?.takeIf { it.isNotEmpty() }
+            ?.toIntArray()
+        val cueText = firstStep?.takeIf { it.hasCue() }?.cue?.alternateTextList?.firstOrNull()?.takeIf { it.isNotBlank() }
 val actionText = state?.stepsList?.firstOrNull()?.maneuver?.type?.let { maneuverTypeToAction(it) }
     ?: detail?.takeIf { it.hasNextTurn() }?.let { nextEventToAction(it.nextTurn) }
     ?: context.getString(R.string.nav_action_unknown)
@@ -192,7 +208,10 @@ val actionText = state?.stepsList?.firstOrNull()?.maneuver?.type?.let { maneuver
             nextManeuver = nextManeuver,
             totalDistanceMeters = totalDistanceMeters,
             totalTimeSeconds = totalTimeSeconds,
-            estimatedArrival = estimatedArrival
+            estimatedArrival = estimatedArrival,
+            turnImage = turnImage,
+            laneShapes = laneShapes,
+            cueText = cueText
         )
     }
 

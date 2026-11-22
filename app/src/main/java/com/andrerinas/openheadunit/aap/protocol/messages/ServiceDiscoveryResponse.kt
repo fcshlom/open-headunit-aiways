@@ -317,12 +317,23 @@ internal class ServiceDiscoveryResponse(context: Context, audioConfig: AudioSess
             }.build()
             services.add(mediaPlaybackStatus)
 
-            // Navigation Status Service — head unit receives turn-by-turn data from any AA nav app
+            // Navigation Status Service — head unit receives turn-by-turn data from any AA nav app.
+            // Aiways: ask for the nav app's own turn image as well (CustomImageSupported), not only
+            // the codes. The launcher draws it on the driver's display: a code alone does not say how
+            // a roundabout is shaped (exit 2 of three arms is a left, of four arms straight ahead), and
+            // the phone has so far sent no exit angle (turn_angle 0 in every log).
             val navigationStatus = Control.Service.newBuilder().also { service ->
                 service.id = Channel.ID_NAV
                 service.navigationStatusService = Control.Service.NavigationStatusService.newBuilder()
                     .setMinimumIntervalMs(1000)
-                    .setType(Control.Service.NavigationStatusService.ClusterType.ImageCodesOnly)
+                    .setType(Control.Service.NavigationStatusService.ClusterType.CustomImageSupported)
+                    .setImageOptions(
+                        Control.Service.NavigationStatusService.ImageOptions.newBuilder()
+                            .setWidth(256)
+                            .setHeight(256)
+                            .setColourDethBits(32)
+                            .build()
+                    )
                     .build()
             }.build()
             services.add(navigationStatus)
