@@ -3,48 +3,45 @@ package com.andrerinas.openheadunit.aiways;
 import android.content.Context;
 import android.content.Intent;
 import android.graphics.Bitmap;
-import android.graphics.Color;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.Looper;
-import android.os.SystemClock;
-import java.io.ByteArrayOutputStream;
-import java.util.Arrays;
 
 /**
- * The nav app's own roundabout icon, cut from the Android Auto screen for the launcher's driver's display
- * (4.0.0-aiways.14).
+ * A roundabout's exit direction read from the nav app's own turn icon on the Android Auto screen, for the launcher's
+ * driver's display (4.0.0-aiways.14; since 4.0.0-aiways.15 the angle instead of the picture).
  *
  * Why: before a roundabout Waze sends the car only "enter roundabout" and one generic picture, the same for every
- * roundabout (three roundabouts of 23 November, one picture), while the icon on its own turn card on the Android
- * Auto screen already shows the real exit (the snapshots of AiwaysTurnCard: an exit to the left at the first two,
- * to the right at the third, from 1.7 km and 450 m on). The real exit picture reaches the car only inside the
- * roundabout.
+ * roundabout, while the icon on its own turn card on the Android Auto screen already shows the real exit (the
+ * snapshots of AiwaysTurnCard). In 4.0.0-aiways.14 that icon itself was sent, but it is only about 34 x 28 pixels on
+ * the screen and looked blurred on the driver's display, and when another app's page or a notification covered
+ * the corner, that was sent instead (the drive of 23 November). Now {@link AiwaysRoundaboutReader} reads the exit's
+ * angle from the icon, and the launcher draws its own sharp icon at that angle.
  *
  * Where: Waze's turn card is in the screen's top-left corner, right of Android Auto's rail; its icon, left of the
- * distance, sat at x 62..88, y 26..46 of the 960 x 330 snapshots (the TextureView scaled down), i.e. about
- * 52 x 40 pixels on the screen. The crop is that box with a margin, as fractions of the view, so it does not
- * depend on the view's size.
+ * distance, sat at x 62..88, y 26..46 of the 960 x 330 snapshots (the TextureView scaled down). The crop is that box
+ * with a margin, as fractions of the view, so it does not depend on the view's size.
  *
- * When: only while the next maneuver is a roundabout, once a second on the main thread (TextureView.getBitmap must
- * run there). The navigation callback only posts the new event to the main thread, so all of this class's state
- * lives on the main thread; the PNG is compressed and broadcast on a worker thread. The view is read at half its size into one reused bitmap ({@link #SCALE}): a quarter of the work of a
- * full-size copy on the head unit's main thread, and the size of the snapshots the crop was checked on, where the
- * icons are clear. The crop's pixels are checked in a reused array; an icon is
- * compressed only when it differs from the last one sent, and an unchanged one is sent again only every
- * {@link #RESEND_MS}, inside the launcher's 3 s freshness window. A crop counts only when it looks like the card's
- * icon: a dark border all round (the card) and a share of bright pixels inside (the white icon); Waze can shrink the card for an alert,
- * and then nothing is sent. Sent as {@link #ACTION} with the PNG in {@link #EXTRA_ICON}, under the same signature
- * permission as the navigation broadcast. Logged as [turnicon] when a roundabout's icon is first found, or not.
+ * When: only while the next maneuver is a roundabout, once a second. The navigation callback only posts the event to
+ * the main thread, which reads the screen (TextureView.getBitmap must run there) at half size into one reused
+ * bitmap and copies the crop's pixels out; the reading and the broadcast run on a worker thread.
+ *
+ * Which angle: a read counts only when two reads in a row agree, and it is kept for the rest of that roundabout,
+ * also while another app or a notification covers the corner. It is forgotten when the maneuver changes: when the
+ * next maneuver is no roundabout, after the roundabout itself (event 12), or when the distance jumps up (the next
+ * roundabout). While an angle is known it is sent every second as {@link #ACTION} with the angle in
+ * {@link #EXTRA_EXIT} (degrees anticlockwise from the entry: right 90, straight 180, left 270), under the same
+ * signature permission as the navigation broadcast. Logged as [turnicon] when the angle is found or changes, and
+ * once per roundabout when the screen shows none.
  */
 public final class AiwaysTurnIcon {
     public static final String ACTION = "com.aiways.headunit.TURN_ICON";
-    public static final String EXTRA_ICON = "icon";
+    public static final String EXTRA_EXIT = "exit_deg";
     public static final String EXTRA_EVENT = "event";
     private static final String PERMISSION = "com.andrerinas.headunitrevived.permission.NAVIGATION_UPDATE";
     private static final long PERIOD_MS = 1000L;
-    /** An unchanged icon is sent again after this long: the launcher drops one older than 3 s. */
-    private static final long RESEND_MS = 2000L;
+    /** A distance this much larger than the last one is the next roundabout. */
+    private static final int NEW_ROUNDABOUT_M = 150;
     /** The view is read at this fraction of its size. */
     private static final float SCALE = 0.5f;
     // the icon's box as fractions of the view (from x 58..92, y 22..50 of 960 x 330)
@@ -60,17 +57,15 @@ public final class AiwaysTurnIcon {
     private static final Handler MAIN = new Handler(Looper.getMainLooper());
     // main thread only
     private static int event = -1;
+    private static int distance = -1;
     private static boolean running;
     private static Bitmap full;
-    /** The crop's pixels (reused), and those of the icon last sent: an unchanged icon is not compressed again. */
-    private static int[] pixels;
-    private static int[] sent;
-    private static boolean haveSent;
-    private static long sentAt;
-    private static boolean loggedThisRoundabout;
     private static Handler worker;
-    // worker thread only: the last icon compressed
-    private static byte[] png;
+    private static boolean loggedError;
+    // worker thread only
+    private static int candidate = -1;
+    private static int confirmed = -1;
+    private static boolean loggedNone;
 
     private AiwaysTurnIcon() {
     }
@@ -79,11 +74,12 @@ public final class AiwaysTurnIcon {
      * From the navigation broadcast, on any thread: every update of the next maneuver (-1 when the guidance ends).
      * It only hands the event to the main thread; nothing is read from the screen here.
      */
-    public static void onGuidance(final int nextEvent) {
+    public static void onGuidance(final int nextEvent, final Integer distanceMeters) {
+        final int d = distanceMeters != null ? distanceMeters : -1;
         MAIN.post(new Runnable() {
             @Override
             public void run() {
-                update(nextEvent);
+                update(nextEvent, d);
             }
         });
     }
@@ -92,16 +88,31 @@ public final class AiwaysTurnIcon {
         return e == EV_ROUNDABOUT_ENTER || e == EV_ROUNDABOUT_EXIT || e == EV_ROUNDABOUT_BOTH;
     }
 
-    /** On the main thread: a roundabout starts the ticker, if it is not running yet. */
-    private static void update(int e) {
+    /** On the main thread: forgets the angle when the maneuver changes, and starts the ticker at a roundabout. */
+    private static void update(int e, int d) {
+        boolean next = !isRoundabout(e)
+                || (event == EV_ROUNDABOUT_EXIT && e != EV_ROUNDABOUT_EXIT)
+                || (d >= 0 && distance >= 0 && d > distance + NEW_ROUNDABOUT_M);
+        if (next && worker != null) {
+            worker.post(RESET);
+        }
         event = e;
+        distance = d;
         if (isRoundabout(e) && !running) {
             running = true;
-            loggedThisRoundabout = false;
-            haveSent = false;
+            loggedError = false;
             MAIN.post(TICK);
         }
     }
+
+    private static final Runnable RESET = new Runnable() {
+        @Override
+        public void run() {
+            candidate = -1;
+            confirmed = -1;
+            loggedNone = false;
+        }
+    };
 
     private static final Runnable TICK = new Runnable() {
         @Override
@@ -113,9 +124,6 @@ public final class AiwaysTurnIcon {
                     full.recycle();
                     full = null;
                 }
-                pixels = null;
-                sent = null;
-                haveSent = false;
                 return;
             }
             crop(e);
@@ -123,7 +131,7 @@ public final class AiwaysTurnIcon {
         }
     };
 
-    /** On the main thread: reads the screen, checks the crop, and hands a new or due icon to the worker. */
+    /** On the main thread: reads the screen and hands the crop's pixels to the worker. */
     private static void crop(final int e) {
         try {
             int[] size = AiwaysTurnCard.viewSize();
@@ -146,71 +154,48 @@ public final class AiwaysTurnIcon {
             int y0 = Math.round(TOP * h);
             final int cw = Math.max(1, Math.min(w - x0, Math.round((RIGHT - LEFT) * w)));
             final int ch = Math.max(1, Math.min(h - y0, Math.round((BOTTOM - TOP) * h)));
-            if (pixels == null || pixels.length != cw * ch) {
-                pixels = new int[cw * ch];
-                sent = new int[cw * ch];
-                haveSent = false;
-            }
+            final int[] pixels = new int[cw * ch];
             full.getPixels(pixels, 0, cw, x0, y0, cw, ch);
-            String why = check(pixels, cw, ch);
-            if (why != null) {
-                if (!loggedThisRoundabout) {
-                    loggedThisRoundabout = true;
-                    AiwaysLog.event("turnicon", "no icon on the screen at event " + e + ": " + why);
-                }
-                return;
-            }
-            long now = SystemClock.uptimeMillis();
-            boolean same = haveSent && Arrays.equals(pixels, sent);
-            if (same && now - sentAt < RESEND_MS) {
-                return;
-            }
-            final int[] fresh;
-            if (same) {
-                fresh = null;
-            } else {
-                System.arraycopy(pixels, 0, sent, 0, pixels.length);
-                haveSent = true;
-                fresh = sent.clone();
-            }
-            sentAt = now;
-            final boolean log = !loggedThisRoundabout;
-            loggedThisRoundabout = true;
             worker().post(new Runnable() {
                 @Override
                 public void run() {
-                    send(c, fresh, cw, ch, e, log);
+                    read(c, pixels, cw, ch, e);
                 }
             });
         } catch (RuntimeException | OutOfMemoryError ex) {
-            if (!loggedThisRoundabout) {
-                loggedThisRoundabout = true;
-                AiwaysLog.event("turnicon", "cannot crop the screen: " + ex);
+            if (!loggedError) {
+                loggedError = true;
+                AiwaysLog.event("turnicon", "cannot read the screen: " + ex);
             }
         }
     }
 
-    /** On the worker: compresses a new icon (fresh != null) and broadcasts the last one compressed. */
-    private static void send(Context c, int[] fresh, int cw, int ch, int e, boolean log) {
+    /** On the worker: reads the exit, confirms it on two reads in a row, and sends the confirmed one. */
+    private static void read(Context c, int[] pixels, int cw, int ch, int e) {
         try {
-            if (fresh != null) {
-                Bitmap icon = Bitmap.createBitmap(fresh, cw, ch, Bitmap.Config.ARGB_8888);
-                ByteArrayOutputStream out = new ByteArrayOutputStream();
-                icon.compress(Bitmap.CompressFormat.PNG, 100, out);
-                icon.recycle();
-                png = out.toByteArray();
+            for (int i = 0; i < pixels.length; i++) {
+                pixels[i] = AiwaysRoundaboutReader.lum(pixels[i]);
             }
-            if (png == null) {
-                return;
+            AiwaysRoundaboutReader.Result r = AiwaysRoundaboutReader.read(pixels, cw, ch);
+            if (r.exitDeg >= 0) {
+                if (r.exitDeg == candidate && r.exitDeg != confirmed) {
+                    confirmed = r.exitDeg;
+                    AiwaysLog.event("turnicon", "event " + e + ": " + r);
+                }
+                candidate = r.exitDeg;
+            } else {
+                candidate = -1;
+                if (confirmed < 0 && !loggedNone) {
+                    loggedNone = true;
+                    AiwaysLog.event("turnicon", "event " + e + ": " + r);
+                }
             }
-            c.sendBroadcast(new Intent(ACTION).putExtra(EXTRA_ICON, png).putExtra(EXTRA_EVENT, e), PERMISSION);
-            if (log) {
-                AiwaysLog.event("turnicon", "icon " + cw + "x" + ch + " sent at event " + e);
+            if (confirmed >= 0) {
+                c.sendBroadcast(new Intent(ACTION).putExtra(EXTRA_EXIT, confirmed).putExtra(EXTRA_EVENT, e),
+                        PERMISSION);
             }
-        } catch (RuntimeException | OutOfMemoryError ex) {
-            if (log) {
-                AiwaysLog.event("turnicon", "cannot send the icon: " + ex);
-            }
+        } catch (RuntimeException ex) {
+            AiwaysLog.event("turnicon", "cannot read the exit: " + ex);
         }
     }
 
@@ -221,34 +206,5 @@ public final class AiwaysTurnIcon {
             worker = new Handler(t.getLooper());
         }
         return worker;
-    }
-
-    /** Null when the crop looks like the card's icon (dark border, white shape inside), else why not. */
-    static String check(int[] px, int w, int h) {
-        long border = 0;
-        int borderN = 0;
-        int bright = 0;
-        for (int y = 0; y < h; y++) {
-            for (int x = 0; x < w; x++) {
-                int p = px[y * w + x];
-                int lum = (Color.red(p) * 3 + Color.green(p) * 6 + Color.blue(p)) / 10;
-                if (x == 0 || y == 0 || x == w - 1 || y == h - 1) {
-                    border += lum;
-                    borderN++;
-                } else if (lum > 170) {
-                    bright++;
-                }
-            }
-        }
-        int inner = Math.max(1, (w - 2) * (h - 2));
-        long borderMean = borderN > 0 ? border / borderN : 255;
-        int brightPct = bright * 100 / inner;
-        if (borderMean > 70) {
-            return "border not dark (" + borderMean + ")";
-        }
-        if (brightPct < 2 || brightPct > 50) {
-            return "bright share " + brightPct + "%";
-        }
-        return null;
     }
 }
