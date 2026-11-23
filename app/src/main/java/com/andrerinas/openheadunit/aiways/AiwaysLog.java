@@ -142,24 +142,26 @@ public final class AiwaysLog {
                         continue;
                     }
                     try {
-                        byte[] body = new byte[(int) Math.min(f.length(), MAX_TEE_BYTES)];
+                        append(now, "[log] --- lines from " + f.getName() + ", written before the T-Box time was known ---", MAX_BYTES_PER_DAY);
+                        File today = new File(dir, "headunit-" + new SimpleDateFormat("yyyy-MM-dd", Locale.US).format(new Date(now)) + ".log");
+                        // copied in chunks, whole: a stale day file can hold up to MAX_BYTES_PER_DAY of own events
+                        // now, more than is wise to read into memory at once on the head unit
                         java.io.FileInputStream in = new java.io.FileInputStream(f);
                         try {
-                            int off = 0;
-                            int n;
-                            while (off < body.length && (n = in.read(body, off, body.length - off)) > 0) {
-                                off += n;
+                            FileOutputStream out = new FileOutputStream(today, true);
+                            try {
+                                byte[] buf = new byte[64 * 1024];
+                                long left = Math.min(f.length(), MAX_BYTES_PER_DAY);
+                                int n;
+                                while (left > 0 && (n = in.read(buf, 0, (int) Math.min(buf.length, left))) > 0) {
+                                    out.write(buf, 0, n);
+                                    left -= n;
+                                }
+                            } finally {
+                                out.close();
                             }
                         } finally {
                             in.close();
-                        }
-                        append(now, "[log] --- lines from " + f.getName() + ", written before the T-Box time was known ---", MAX_BYTES_PER_DAY);
-                        File today = new File(dir, "headunit-" + new SimpleDateFormat("yyyy-MM-dd", Locale.US).format(new Date(now)) + ".log");
-                        FileOutputStream out = new FileOutputStream(today, true);
-                        try {
-                            out.write(body);
-                        } finally {
-                            out.close();
                         }
                         append(now, "[log] --- end of " + f.getName() + " ---", MAX_BYTES_PER_DAY);
                         //noinspection ResultOfMethodCallIgnored
