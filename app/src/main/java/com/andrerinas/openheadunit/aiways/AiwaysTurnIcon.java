@@ -25,7 +25,9 @@ import java.io.ByteArrayOutputStream;
  * depend on the view's size.
  *
  * When: only while the next maneuver is a roundabout, once a second on the main thread (TextureView.getBitmap must
- * run there; it reuses one full-size bitmap). A crop counts only when it looks like the card's icon: a dark border
+ * run there). The view is read at half its size into one reused bitmap ({@link #SCALE}): a quarter of the work of a
+ * full-size copy on the head unit's main thread, and the size of the snapshots the crop was checked on, where the
+ * icons are clear. A crop counts only when it looks like the card's icon: a dark border
  * all round (the card) and a share of bright pixels inside (the white icon); Waze can shrink the card for an alert,
  * and then nothing is sent. Sent as {@link #ACTION} with the PNG in {@link #EXTRA_ICON}, under the same signature
  * permission as the navigation broadcast. Logged as [turnicon] when a roundabout's icon is first found, or not.
@@ -36,6 +38,8 @@ public final class AiwaysTurnIcon {
     public static final String EXTRA_EVENT = "event";
     private static final String PERMISSION = "com.andrerinas.headunitrevived.permission.NAVIGATION_UPDATE";
     private static final long PERIOD_MS = 1000L;
+    /** The view is read at this fraction of its size. */
+    private static final float SCALE = 0.5f;
     // the icon's box as fractions of the view (from x 58..92, y 22..50 of 960 x 330)
     private static final float LEFT = 58f / 960f;
     private static final float TOP = 22f / 330f;
@@ -103,8 +107,8 @@ public final class AiwaysTurnIcon {
         }
         Bitmap icon = null;
         try {
-            int w = v.getWidth();
-            int h = v.getHeight();
+            int w = Math.max(1, Math.round(v.getWidth() * SCALE));
+            int h = Math.max(1, Math.round(v.getHeight() * SCALE));
             if (full == null || full.getWidth() != w || full.getHeight() != h) {
                 if (full != null) {
                     full.recycle();
