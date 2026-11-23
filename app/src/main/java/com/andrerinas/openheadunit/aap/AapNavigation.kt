@@ -165,7 +165,7 @@ class AapNavigation(
         private const val BROADCAST_DEBOUNCE_MS = 1000L
         private const val NAV_EVENT_TYPE_TURN = 0
         private const val NAV_EVENT_TYPE_START = 1
-        private const val NAV_EVENT_TYPE_STOP = 2
+        internal const val NAV_EVENT_TYPE_STOP = 2   // also read by AapNavigationHelper (Aiways turn card)
         private const val NAV_EVENT_TYPE_STATUS = 3
         private const val NAV_EVENT_TYPE_STATE = 4
         private const val NAV_EVENT_TYPE_CURRENT_POSITION = 5
