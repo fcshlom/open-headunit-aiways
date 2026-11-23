@@ -69,6 +69,7 @@ public final class AiwaysTurnIcon {
     private static int candidate = -1;
     private static int confirmed = -1;
     private static boolean loggedNone;
+    private static boolean loggedReadError;
 
     private AiwaysTurnIcon() {
     }
@@ -114,6 +115,7 @@ public final class AiwaysTurnIcon {
             candidate = -1;
             confirmed = -1;
             loggedNone = false;
+            loggedReadError = false;
         }
     };
 
@@ -169,7 +171,7 @@ public final class AiwaysTurnIcon {
         } catch (RuntimeException | OutOfMemoryError ex) {
             if (!loggedError) {
                 loggedError = true;
-                AiwaysLog.event("turnicon", "cannot read the screen: " + ex);
+                AiwaysLog.event("turnicon", "cannot read the screen: " + where(ex));
             }
         }
     }
@@ -199,10 +201,26 @@ public final class AiwaysTurnIcon {
                         PERMISSION);
             }
         } catch (RuntimeException ex) {
-            AiwaysLog.event("turnicon", "cannot read the exit: " + ex);
+            if (!loggedReadError) {
+                loggedReadError = true;
+                AiwaysLog.event("turnicon", "cannot read the exit: " + where(ex));
+            }
         } finally {
             SPARE.set(pixels);
         }
+    }
+
+    /**
+     * The exception with the first frames of its stack trace, for the log. Any exception is caught here (this
+     * helper must never take the projection down while driving), so the log has to say where it came from.
+     */
+    static String where(Throwable t) {
+        StringBuilder b = new StringBuilder(String.valueOf(t));
+        StackTraceElement[] st = t.getStackTrace();
+        for (int i = 0; i < Math.min(3, st.length); i++) {
+            b.append(" at ").append(st[i]);
+        }
+        return b.toString();
     }
 
     private static Handler worker() {
