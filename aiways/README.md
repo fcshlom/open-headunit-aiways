@@ -95,3 +95,9 @@ Waze sends the car only "enter roundabout" and one picture: no exit number, no l
 The day log was capped at 5 MB. The projection's own debug lines (an ack for every video frame) filled that by the first drive of the day. Both the 22 and 23 November files stopped at exactly 5,242,970 bytes, and the turn card snapshots of the 05:47–06:05 drive on 23 November were lost with everything else. Now AppLog's lines still stop at 5 MB a day, and this package's own events (`[turncard]`, `[sync]`, `[wifi]`, ...) go on up to 15 MB a day. The backend takes up to 20 MB per day file.
 
 The turn card snapshots now cover every maneuver at 300 m, 100 m and at the turn itself, where Waze shows lanes and junction details, not only roundabouts. Roundabouts still also get one at 800 m. The cap is 80 a day.
+
+## The roundabout icon from the screen (4.0.0-aiways.14)
+
+Before a roundabout Waze sends the car one generic picture, the same for every roundabout: one picture for the three roundabouts of 23 November. The icon on Waze's own turn card on the Android Auto screen already shows the real exit, from 1.7 km and 450 m before the roundabout on (the `[turncard]` snapshots). The real exit picture reaches the car only inside the roundabout.
+
+`AiwaysTurnIcon` cuts that icon from the screen. It does this only while the next maneuver is a roundabout, once a second. The box sits right of Android Auto's rail, left of the distance: x 58..92, y 22..50 of the 960 x 330 snapshots, kept as fractions of the view. A crop counts only with a dark border (the card) and 2–50 % bright pixels inside (the white icon), so nothing is sent when Waze shrinks the card for an alert. It is sent as `com.aiways.headunit.TURN_ICON` with the PNG in `icon` and the event in `event`, under the navigation broadcast's signature permission. The log shows `[turnicon] icon WxH sent` or `no icon on the screen: <why>` once per roundabout. The launcher (4.80.0) draws it on the driver's display.

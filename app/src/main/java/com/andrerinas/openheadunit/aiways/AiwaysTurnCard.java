@@ -55,6 +55,11 @@ public final class AiwaysTurnCard {
         view = new WeakReference<>(v);
     }
 
+    /** The projection's TextureView, or null (also read by AiwaysTurnIcon). */
+    static TextureView view() {
+        return view.get();
+    }
+
     /** From the navigation broadcast: every update of the next maneuver. */
     public static void onGuidance(final int event, final Integer distanceMeters) {
         final int d = distanceMeters != null ? distanceMeters : -1;
