@@ -93,3 +93,5 @@ Waze sends the car only "enter roundabout" and one picture: no exit number, no l
 ## Room for this app's own log lines (4.0.0-aiways.13)
 
 The day log was capped at 5 MB. The projection's own debug lines (an ack for every video frame) filled that by the first drive of the day. Both the 22 and 23 November files stopped at exactly 5,242,970 bytes, and the turn card snapshots of the 05:47–06:05 drive on 23 November were lost with everything else. Now AppLog's lines still stop at 5 MB a day, and this package's own events (`[turncard]`, `[sync]`, `[wifi]`, ...) go on up to 15 MB a day. The backend takes up to 20 MB per day file.
+
+The turn card snapshots now cover every maneuver at 300 m, 100 m and at the turn itself, where Waze shows lanes and junction details, not only roundabouts. Roundabouts still also get one at 800 m. The cap is 80 a day.
