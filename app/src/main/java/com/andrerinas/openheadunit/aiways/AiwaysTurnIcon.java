@@ -6,6 +6,7 @@ import android.graphics.Bitmap;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.Looper;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * A roundabout's exit direction read from the nav app's own turn icon on the Android Auto screen, for the launcher's
@@ -55,6 +56,8 @@ public final class AiwaysTurnIcon {
     private static final int EV_ROUNDABOUT_BOTH = 13;
 
     private static final Handler MAIN = new Handler(Looper.getMainLooper());
+    /** The crop's pixel array, handed back by the worker after a read, so the next tick reuses it. */
+    private static final AtomicReference<int[]> SPARE = new AtomicReference<>();
     // main thread only
     private static int event = -1;
     private static int distance = -1;
@@ -154,7 +157,8 @@ public final class AiwaysTurnIcon {
             int y0 = Math.round(TOP * h);
             final int cw = Math.max(1, Math.min(w - x0, Math.round((RIGHT - LEFT) * w)));
             final int ch = Math.max(1, Math.min(h - y0, Math.round((BOTTOM - TOP) * h)));
-            final int[] pixels = new int[cw * ch];
+            int[] spare = SPARE.getAndSet(null);
+            final int[] pixels = spare != null && spare.length == cw * ch ? spare : new int[cw * ch];
             full.getPixels(pixels, 0, cw, x0, y0, cw, ch);
             worker().post(new Runnable() {
                 @Override
@@ -196,6 +200,8 @@ public final class AiwaysTurnIcon {
             }
         } catch (RuntimeException ex) {
             AiwaysLog.event("turnicon", "cannot read the exit: " + ex);
+        } finally {
+            SPARE.set(pixels);
         }
     }
 
