@@ -6,8 +6,10 @@ import android.graphics.Bitmap;
 import android.graphics.Color;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.SystemClock;
 import android.view.TextureView;
 import java.io.ByteArrayOutputStream;
+import java.util.Arrays;
 
 /**
  * The nav app's own roundabout icon, cut from the Android Auto screen for the launcher's driver's display
@@ -27,8 +29,10 @@ import java.io.ByteArrayOutputStream;
  * When: only while the next maneuver is a roundabout, once a second on the main thread (TextureView.getBitmap must
  * run there). The view is read at half its size into one reused bitmap ({@link #SCALE}): a quarter of the work of a
  * full-size copy on the head unit's main thread, and the size of the snapshots the crop was checked on, where the
- * icons are clear. A crop counts only when it looks like the card's icon: a dark border
- * all round (the card) and a share of bright pixels inside (the white icon); Waze can shrink the card for an alert,
+ * icons are clear. The crop's pixels are checked in a reused array; an icon is
+ * compressed only when it differs from the last one sent, and an unchanged one is sent again only every
+ * {@link #RESEND_MS}, inside the launcher's 3 s freshness window. A crop counts only when it looks like the card's
+ * icon: a dark border all round (the card) and a share of bright pixels inside (the white icon); Waze can shrink the card for an alert,
  * and then nothing is sent. Sent as {@link #ACTION} with the PNG in {@link #EXTRA_ICON}, under the same signature
  * permission as the navigation broadcast. Logged as [turnicon] when a roundabout's icon is first found, or not.
  */
@@ -38,6 +42,8 @@ public final class AiwaysTurnIcon {
     public static final String EXTRA_EVENT = "event";
     private static final String PERMISSION = "com.andrerinas.headunitrevived.permission.NAVIGATION_UPDATE";
     private static final long PERIOD_MS = 1000L;
+    /** An unchanged icon is sent again after this long: the launcher drops one older than 3 s. */
+    private static final long RESEND_MS = 2000L;
     /** The view is read at this fraction of its size. */
     private static final float SCALE = 0.5f;
     // the icon's box as fractions of the view (from x 58..92, y 22..50 of 960 x 330)
@@ -55,6 +61,11 @@ public final class AiwaysTurnIcon {
     // main thread only
     private static boolean running;
     private static Bitmap full;
+    /** The crop's pixels (reused), and those of the icon last sent: an unchanged icon is not sent again. */
+    private static int[] pixels;
+    private static int[] sent;
+    private static byte[] png;
+    private static long sentAt;
     private static boolean loggedThisRoundabout;
 
     private AiwaysTurnIcon() {
@@ -78,6 +89,7 @@ public final class AiwaysTurnIcon {
             if (!running) {
                 running = true;
                 loggedThisRoundabout = false;
+                sent = null;
                 MAIN.post(TICK);
             }
         }
@@ -93,6 +105,9 @@ public final class AiwaysTurnIcon {
                     full.recycle();
                     full = null;
                 }
+                pixels = null;
+                sent = null;
+                png = null;
                 return;
             }
             crop(e);
@@ -105,7 +120,6 @@ public final class AiwaysTurnIcon {
         if (v == null || !v.isAvailable() || v.getWidth() <= 0 || v.getHeight() <= 0) {
             return;
         }
-        Bitmap icon = null;
         try {
             int w = Math.max(1, Math.round(v.getWidth() * SCALE));
             int h = Math.max(1, Math.round(v.getHeight() * SCALE));
@@ -118,10 +132,14 @@ public final class AiwaysTurnIcon {
             v.getBitmap(full);
             int x0 = Math.round(LEFT * w);
             int y0 = Math.round(TOP * h);
-            int cw = Math.max(1, Math.round((RIGHT - LEFT) * w));
-            int ch = Math.max(1, Math.round((BOTTOM - TOP) * h));
-            icon = Bitmap.createBitmap(full, x0, y0, cw, ch);
-            String why = check(icon);
+            int cw = Math.max(1, Math.min(w - x0, Math.round((RIGHT - LEFT) * w)));
+            int ch = Math.max(1, Math.min(h - y0, Math.round((BOTTOM - TOP) * h)));
+            if (pixels == null || pixels.length != cw * ch) {
+                pixels = new int[cw * ch];
+                sent = null;
+            }
+            full.getPixels(pixels, 0, cw, x0, y0, cw, ch);
+            String why = check(pixels, cw, ch);
             if (why != null) {
                 if (!loggedThisRoundabout) {
                     loggedThisRoundabout = true;
@@ -129,10 +147,22 @@ public final class AiwaysTurnIcon {
                 }
                 return;
             }
-            ByteArrayOutputStream out = new ByteArrayOutputStream();
-            icon.compress(Bitmap.CompressFormat.PNG, 100, out);
+            long now = SystemClock.uptimeMillis();
+            boolean same = sent != null && Arrays.equals(pixels, sent);
+            if (same && now - sentAt < RESEND_MS) {
+                return;
+            }
+            if (!same) {
+                sent = pixels.clone();
+                Bitmap icon = Bitmap.createBitmap(pixels, cw, ch, Bitmap.Config.ARGB_8888);
+                ByteArrayOutputStream out = new ByteArrayOutputStream();
+                icon.compress(Bitmap.CompressFormat.PNG, 100, out);
+                icon.recycle();
+                png = out.toByteArray();
+            }
+            sentAt = now;
             Context c = v.getContext().getApplicationContext();
-            c.sendBroadcast(new Intent(ACTION).putExtra(EXTRA_ICON, out.toByteArray()).putExtra(EXTRA_EVENT, e), PERMISSION);
+            c.sendBroadcast(new Intent(ACTION).putExtra(EXTRA_ICON, png).putExtra(EXTRA_EVENT, e), PERMISSION);
             if (!loggedThisRoundabout) {
                 loggedThisRoundabout = true;
                 AiwaysLog.event("turnicon", "icon " + cw + "x" + ch + " sent at event " + e);
@@ -142,23 +172,17 @@ public final class AiwaysTurnIcon {
                 loggedThisRoundabout = true;
                 AiwaysLog.event("turnicon", "cannot crop the screen: " + ex);
             }
-        } finally {
-            if (icon != null && icon != full) {
-                icon.recycle();
-            }
         }
     }
 
     /** Null when the crop looks like the card's icon (dark border, white shape inside), else why not. */
-    static String check(Bitmap b) {
-        int w = b.getWidth();
-        int h = b.getHeight();
+    static String check(int[] px, int w, int h) {
         long border = 0;
         int borderN = 0;
         int bright = 0;
         for (int y = 0; y < h; y++) {
             for (int x = 0; x < w; x++) {
-                int p = b.getPixel(x, y);
+                int p = px[y * w + x];
                 int lum = (Color.red(p) * 3 + Color.green(p) * 6 + Color.blue(p)) / 10;
                 if (x == 0 || y == 0 || x == w - 1 || y == h - 1) {
                     border += lum;
