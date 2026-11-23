@@ -58,6 +58,9 @@ public final class AiwaysTurnCard {
 
     /** Main thread only: the projection view's size {width, height}, or null when there is no readable view. */
     static int[] viewSize() {
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            return null;
+        }
         TextureView v = view.get();
         if (v == null || !v.isAvailable() || v.getWidth() <= 0 || v.getHeight() <= 0) {
             return null;
@@ -68,11 +71,14 @@ public final class AiwaysTurnCard {
     /**
      * Main thread only (TextureView.getBitmap must run there): copies the projection into {@code into}, scaled to
      * its size, for AiwaysTurnIcon. Returns the application context for its broadcast, or null when there is no
-     * readable view. The view itself stays private to this class.
+     * readable view or when called off the main thread. The view itself stays private to this class.
      */
     static Context readScreen(Bitmap into) {
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            return null;
+        }
         TextureView v = view.get();
-        if (v == null || !v.isAvailable()) {
+        if (v == null || !v.isAvailable() || into == null || into.isRecycled()) {
             return null;
         }
         v.getBitmap(into);
