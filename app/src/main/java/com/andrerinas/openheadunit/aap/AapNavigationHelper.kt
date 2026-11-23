@@ -98,7 +98,8 @@ class AapNavigationHelper(
             if (guiding) prepared.nextEventType else -1,
             prepared.distanceMeters
         )
-        // ... and at a roundabout, the nav app's own icon cut from the screen for the driver's display
+        // ... and at a roundabout, the nav app's own icon cut from the screen for the driver's display. This only
+        // posts the event to the main thread; the screen is read there later, at most once a second.
         com.andrerinas.openheadunit.aiways.AiwaysTurnIcon.onGuidance(if (guiding) prepared.nextEventType else -1)
     }
 

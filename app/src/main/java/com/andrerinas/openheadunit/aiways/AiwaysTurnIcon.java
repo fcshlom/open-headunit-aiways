@@ -5,9 +5,9 @@ import android.content.Intent;
 import android.graphics.Bitmap;
 import android.graphics.Color;
 import android.os.Handler;
+import android.os.HandlerThread;
 import android.os.Looper;
 import android.os.SystemClock;
-import android.view.TextureView;
 import java.io.ByteArrayOutputStream;
 import java.util.Arrays;
 
@@ -27,7 +27,8 @@ import java.util.Arrays;
  * depend on the view's size.
  *
  * When: only while the next maneuver is a roundabout, once a second on the main thread (TextureView.getBitmap must
- * run there). The view is read at half its size into one reused bitmap ({@link #SCALE}): a quarter of the work of a
+ * run there). The navigation callback only posts the new event to the main thread, so all of this class's state
+ * lives on the main thread; the PNG is compressed and broadcast on a worker thread. The view is read at half its size into one reused bitmap ({@link #SCALE}): a quarter of the work of a
  * full-size copy on the head unit's main thread, and the size of the snapshots the crop was checked on, where the
  * icons are clear. The crop's pixels are checked in a reused array; an icon is
  * compressed only when it differs from the last one sent, and an unchanged one is sent again only every
@@ -57,43 +58,50 @@ public final class AiwaysTurnIcon {
     private static final int EV_ROUNDABOUT_BOTH = 13;
 
     private static final Handler MAIN = new Handler(Looper.getMainLooper());
-    private static volatile int event = -1;
     // main thread only
+    private static int event = -1;
     private static boolean running;
     private static Bitmap full;
-    /** The crop's pixels (reused), and those of the icon last sent: an unchanged icon is not sent again. */
+    /** The crop's pixels (reused), and those of the icon last sent: an unchanged icon is not compressed again. */
     private static int[] pixels;
     private static int[] sent;
-    private static byte[] png;
+    private static boolean haveSent;
     private static long sentAt;
     private static boolean loggedThisRoundabout;
+    private static Handler worker;
+    // worker thread only: the last icon compressed
+    private static byte[] png;
 
     private AiwaysTurnIcon() {
     }
 
-    /** From the navigation broadcast: every update of the next maneuver (-1 when the guidance ends). */
-    public static void onGuidance(int nextEvent) {
-        event = nextEvent;
-        if (isRoundabout(nextEvent)) {
-            MAIN.post(START);
-        }
+    /**
+     * From the navigation broadcast, on any thread: every update of the next maneuver (-1 when the guidance ends).
+     * It only hands the event to the main thread; nothing is read from the screen here.
+     */
+    public static void onGuidance(final int nextEvent) {
+        MAIN.post(new Runnable() {
+            @Override
+            public void run() {
+                update(nextEvent);
+            }
+        });
     }
 
     static boolean isRoundabout(int e) {
         return e == EV_ROUNDABOUT_ENTER || e == EV_ROUNDABOUT_EXIT || e == EV_ROUNDABOUT_BOTH;
     }
 
-    private static final Runnable START = new Runnable() {
-        @Override
-        public void run() {
-            if (!running) {
-                running = true;
-                loggedThisRoundabout = false;
-                png = null;
-                MAIN.post(TICK);
-            }
+    /** On the main thread: a roundabout starts the ticker, if it is not running yet. */
+    private static void update(int e) {
+        event = e;
+        if (isRoundabout(e) && !running) {
+            running = true;
+            loggedThisRoundabout = false;
+            haveSent = false;
+            MAIN.post(TICK);
         }
-    };
+    }
 
     private static final Runnable TICK = new Runnable() {
         @Override
@@ -107,7 +115,7 @@ public final class AiwaysTurnIcon {
                 }
                 pixels = null;
                 sent = null;
-                png = null;
+                haveSent = false;
                 return;
             }
             crop(e);
@@ -115,28 +123,33 @@ public final class AiwaysTurnIcon {
         }
     };
 
-    private static void crop(int e) {
-        TextureView v = AiwaysTurnCard.view();
-        if (v == null || !v.isAvailable() || v.getWidth() <= 0 || v.getHeight() <= 0) {
-            return;
-        }
+    /** On the main thread: reads the screen, checks the crop, and hands a new or due icon to the worker. */
+    private static void crop(final int e) {
         try {
-            int w = Math.max(1, Math.round(v.getWidth() * SCALE));
-            int h = Math.max(1, Math.round(v.getHeight() * SCALE));
+            int[] size = AiwaysTurnCard.viewSize();
+            if (size == null) {
+                return;
+            }
+            int w = Math.max(1, Math.round(size[0] * SCALE));
+            int h = Math.max(1, Math.round(size[1] * SCALE));
             if (full == null || full.getWidth() != w || full.getHeight() != h) {
                 if (full != null) {
                     full.recycle();
                 }
                 full = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
             }
-            v.getBitmap(full);
+            final Context c = AiwaysTurnCard.readScreen(full);
+            if (c == null) {
+                return;
+            }
             int x0 = Math.round(LEFT * w);
             int y0 = Math.round(TOP * h);
-            int cw = Math.max(1, Math.min(w - x0, Math.round((RIGHT - LEFT) * w)));
-            int ch = Math.max(1, Math.min(h - y0, Math.round((BOTTOM - TOP) * h)));
+            final int cw = Math.max(1, Math.min(w - x0, Math.round((RIGHT - LEFT) * w)));
+            final int ch = Math.max(1, Math.min(h - y0, Math.round((BOTTOM - TOP) * h)));
             if (pixels == null || pixels.length != cw * ch) {
                 pixels = new int[cw * ch];
-                png = null;
+                sent = new int[cw * ch];
+                haveSent = false;
             }
             full.getPixels(pixels, 0, cw, x0, y0, cw, ch);
             String why = check(pixels, cw, ch);
@@ -148,34 +161,66 @@ public final class AiwaysTurnIcon {
                 return;
             }
             long now = SystemClock.uptimeMillis();
-            boolean same = png != null && Arrays.equals(pixels, sent);
+            boolean same = haveSent && Arrays.equals(pixels, sent);
             if (same && now - sentAt < RESEND_MS) {
                 return;
             }
-            if (!same) {
-                if (sent == null || sent.length != pixels.length) {
-                    sent = new int[pixels.length];
-                }
+            final int[] fresh;
+            if (same) {
+                fresh = null;
+            } else {
                 System.arraycopy(pixels, 0, sent, 0, pixels.length);
-                Bitmap icon = Bitmap.createBitmap(pixels, cw, ch, Bitmap.Config.ARGB_8888);
-                ByteArrayOutputStream out = new ByteArrayOutputStream();
-                icon.compress(Bitmap.CompressFormat.PNG, 100, out);
-                icon.recycle();
-                png = out.toByteArray();
+                haveSent = true;
+                fresh = sent.clone();
             }
             sentAt = now;
-            Context c = v.getContext().getApplicationContext();
-            c.sendBroadcast(new Intent(ACTION).putExtra(EXTRA_ICON, png).putExtra(EXTRA_EVENT, e), PERMISSION);
-            if (!loggedThisRoundabout) {
-                loggedThisRoundabout = true;
-                AiwaysLog.event("turnicon", "icon " + cw + "x" + ch + " sent at event " + e);
-            }
+            final boolean log = !loggedThisRoundabout;
+            loggedThisRoundabout = true;
+            worker().post(new Runnable() {
+                @Override
+                public void run() {
+                    send(c, fresh, cw, ch, e, log);
+                }
+            });
         } catch (RuntimeException | OutOfMemoryError ex) {
             if (!loggedThisRoundabout) {
                 loggedThisRoundabout = true;
                 AiwaysLog.event("turnicon", "cannot crop the screen: " + ex);
             }
         }
+    }
+
+    /** On the worker: compresses a new icon (fresh != null) and broadcasts the last one compressed. */
+    private static void send(Context c, int[] fresh, int cw, int ch, int e, boolean log) {
+        try {
+            if (fresh != null) {
+                Bitmap icon = Bitmap.createBitmap(fresh, cw, ch, Bitmap.Config.ARGB_8888);
+                ByteArrayOutputStream out = new ByteArrayOutputStream();
+                icon.compress(Bitmap.CompressFormat.PNG, 100, out);
+                icon.recycle();
+                png = out.toByteArray();
+            }
+            if (png == null) {
+                return;
+            }
+            c.sendBroadcast(new Intent(ACTION).putExtra(EXTRA_ICON, png).putExtra(EXTRA_EVENT, e), PERMISSION);
+            if (log) {
+                AiwaysLog.event("turnicon", "icon " + cw + "x" + ch + " sent at event " + e);
+            }
+        } catch (RuntimeException | OutOfMemoryError ex) {
+            if (log) {
+                AiwaysLog.event("turnicon", "cannot send the icon: " + ex);
+            }
+        }
+    }
+
+    private static Handler worker() {
+        if (worker == null) {
+            HandlerThread t = new HandlerThread("aiways-turnicon");
+            t.start();
+            worker = new Handler(t.getLooper());
+        }
+        return worker;
     }
 
     /** Null when the crop looks like the card's icon (dark border, white shape inside), else why not. */
