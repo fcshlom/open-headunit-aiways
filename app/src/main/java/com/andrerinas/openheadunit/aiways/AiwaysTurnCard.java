@@ -64,8 +64,7 @@ public final class AiwaysTurnCard {
                 return;
             }
             boolean roundabout = event == EV_ROUNDABOUT_ENTER || event == EV_ROUNDABOUT_EXIT || event == EV_ROUNDABOUT_BOTH;
-            // 0 far (or unknown), 1 a roundabout within 800 m, 2 within 300 m, 3 within 100 m, 4 at the turn
-            int band = d < 0 ? 0 : d > 800 ? 0 : d > 300 ? (roundabout ? 1 : 0) : d > 100 ? 2 : d > 0 ? 3 : 4;
+            int band = band(d, roundabout);
             String key = event + "|" + band;
             if (key.equals(lastKey)) {
                 return;
@@ -87,6 +86,26 @@ public final class AiwaysTurnCard {
                 snap(event, d);
             }
         });
+    }
+
+    /**
+     * How close the maneuver is, as the snapshot points: 0 far away or unknown, 1 a roundabout within 800 m,
+     * 2 within 300 m, 3 within 100 m, 4 at the turn. A new band (or a new maneuver) takes a snapshot.
+     */
+    static int band(int distance, boolean roundabout) {
+        if (distance < 0 || distance > 800) {
+            return 0;
+        }
+        if (distance > 300) {
+            return roundabout ? 1 : 0;
+        }
+        if (distance > 100) {
+            return 2;
+        }
+        if (distance > 0) {
+            return 3;
+        }
+        return 4;
     }
 
     /**
