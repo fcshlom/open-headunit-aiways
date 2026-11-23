@@ -17,11 +17,17 @@ import java.util.Locale;
  * Android/data/com.aiways.headunit/files/logs/headunit-YYYY-MM-DD.log, every line AppLog lets
  * through (its level, INFO by default) plus this package's own events. Uploaded by
  * {@link AiwaysSyncService}; the launcher repo's car-logs job copies them to GitHub.
- * Kept 7 days, at most 5 MB a day. Writes happen on their own thread.
+ * Kept 7 days. AppLog's lines stop at {@link #MAX_TEE_BYTES} a day: the projection's own debug lines (an ack per
+ * video frame) filled that by the first drive of the day, and after it this package's events were lost too, the
+ * turn card snapshots of 23 November among them (4.0.0-aiways.13). This package's own events go on up to
+ * {@link #MAX_BYTES_PER_DAY} (the backend takes 20 MB a day file). Writes happen on their own thread.
  */
 public final class AiwaysLog {
     private static final int KEEP_DAYS = 7;
-    private static final long MAX_BYTES_PER_DAY = 5L * 1024 * 1024;
+    /** AppLog's lines (the tee), per day. */
+    private static final long MAX_TEE_BYTES = 5L * 1024 * 1024;
+    /** This package's own events, per day: room after the tee is full. */
+    private static final long MAX_BYTES_PER_DAY = 15L * 1024 * 1024;
     private static volatile File dir;
     private static volatile Handler writer;
 
@@ -57,12 +63,12 @@ public final class AiwaysLog {
 
     /** One of this package's own events. */
     public static void event(String tag, String message) {
-        write("[" + tag + "] " + message);
+        write("[" + tag + "] " + message, MAX_BYTES_PER_DAY);
     }
 
     /** Tee from AppLog: every line it writes, with its priority letter. */
     public static void line(int priority, String message) {
-        write(level(priority) + " " + message);
+        write(level(priority) + " " + message, MAX_TEE_BYTES);
     }
 
     private static String level(int priority) {
@@ -76,7 +82,7 @@ public final class AiwaysLog {
         }
     }
 
-    private static void write(final String text) {
+    private static void write(final String text, final long cap) {
         final Handler h = writer;
         if (h == null) {
             return;
@@ -85,14 +91,14 @@ public final class AiwaysLog {
         h.post(new Runnable() {
             @Override
             public void run() {
-                append(now, text);
+                append(now, text, cap);
             }
         });
     }
 
-    private static void append(long now, String text) {
+    private static void append(long now, String text, long cap) {
         File f = new File(dir, "headunit-" + new SimpleDateFormat("yyyy-MM-dd", Locale.US).format(new Date(now)) + ".log");
-        if (f.length() > MAX_BYTES_PER_DAY) {
+        if (f.length() > cap) {
             return;
         }
         FileOutputStream out = null;
@@ -136,7 +142,7 @@ public final class AiwaysLog {
                         continue;
                     }
                     try {
-                        byte[] body = new byte[(int) Math.min(f.length(), MAX_BYTES_PER_DAY)];
+                        byte[] body = new byte[(int) Math.min(f.length(), MAX_TEE_BYTES)];
                         java.io.FileInputStream in = new java.io.FileInputStream(f);
                         try {
                             int off = 0;
@@ -147,7 +153,7 @@ public final class AiwaysLog {
                         } finally {
                             in.close();
                         }
-                        append(now, "[log] --- lines from " + f.getName() + ", written before the T-Box time was known ---");
+                        append(now, "[log] --- lines from " + f.getName() + ", written before the T-Box time was known ---", MAX_BYTES_PER_DAY);
                         File today = new File(dir, "headunit-" + new SimpleDateFormat("yyyy-MM-dd", Locale.US).format(new Date(now)) + ".log");
                         FileOutputStream out = new FileOutputStream(today, true);
                         try {
@@ -155,7 +161,7 @@ public final class AiwaysLog {
                         } finally {
                             out.close();
                         }
-                        append(now, "[log] --- end of " + f.getName() + " ---");
+                        append(now, "[log] --- end of " + f.getName() + " ---", MAX_BYTES_PER_DAY);
                         //noinspection ResultOfMethodCallIgnored
                         f.delete();
                     } catch (Exception ignored) {

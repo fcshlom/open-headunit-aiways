@@ -89,3 +89,7 @@ The `NAVIGATION_UPDATE` broadcast carries four new extras:
 Waze sends the car only "enter roundabout" and one picture: no exit number, no lanes, no angle (every turn in the launcher's log of 22 November). That picture once showed a left-exit roundabout with its exit on the right, while Waze's own turn card on the Android Auto screen was right and showed the lanes as well. The plan is to show that card on the driver's display. Step 1 is finding where Waze draws it.
 
 `AiwaysTurnCard` takes a snapshot of the projection (the TextureView, scaled to 960 px wide, JPEG) and writes it to the log as `[turncard] frame WxH event=<n> in <m> m jpeg=<base64>`. It does this when the next maneuver changes, and at a roundabout also at 800, 300, 100 and 0 m. There are at most 40 a day, because a frame shows the map, so where the car is. Only the TextureView projection, the Aiways default, can be read back. Step 2 crops the card from the frame and sends it to the launcher.
+
+## Room for this app's own log lines (4.0.0-aiways.13)
+
+The day log was capped at 5 MB. The projection's own debug lines (an ack for every video frame) filled that by the first drive of the day. Both the 22 and 23 November files stopped at exactly 5,242,970 bytes, and the turn card snapshots of the 05:47–06:05 drive on 23 November were lost with everything else. Now AppLog's lines still stop at 5 MB a day, and this package's own events (`[turncard]`, `[sync]`, `[wifi]`, ...) go on up to 15 MB a day. The backend takes up to 20 MB per day file.
