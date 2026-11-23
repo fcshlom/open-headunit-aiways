@@ -22,14 +22,16 @@ import java.util.Locale;
  * display can show that card itself once its place on the screen is known: these snapshots show it.
  *
  * A snapshot is the projection's TextureView scaled to {@link #WIDTH} pixels wide, JPEG, written to the log as
- * {@code [turncard] frame WxH event=<n> in <m> m jpeg=<base64>}. Taken when the next maneuver changes, and at a
- * roundabout also when it comes within 800, 300 and 100 m and at 0 m (inside), at most {@link #MAX_PER_DAY} a day:
+ * {@code [turncard] frame WxH event=<n> in <m> m jpeg=<base64>}. Taken when the next maneuver changes, and for every
+ * maneuver also when it comes within 300 and 100 m and at 0 m, where the lanes and junction details show
+ * (4.0.0-aiways.13; before, only roundabouts were snapped that close); a roundabout also at 800 m. At most
+ * {@link #MAX_PER_DAY} a day:
  * a frame shows the map, so where the car is, and the logs are copied to the (private) car-logs branch.
  * Only with the TextureView projection (the Aiways default); the others draw where a view cannot read back.
  */
 public final class AiwaysTurnCard {
     static final int WIDTH = 960;
-    static final int MAX_PER_DAY = 40;
+    static final int MAX_PER_DAY = 80;
     private static final int JPEG_QUALITY = 60;
     // NextTurnDetail.NextEvent: the roundabout events
     private static final int EV_ROUNDABOUT_ENTER = 11;
@@ -62,7 +64,7 @@ public final class AiwaysTurnCard {
                 return;
             }
             boolean roundabout = event == EV_ROUNDABOUT_ENTER || event == EV_ROUNDABOUT_EXIT || event == EV_ROUNDABOUT_BOTH;
-            int band = !roundabout || d < 0 || d > 800 ? 0 : d > 300 ? 1 : d > 100 ? 2 : d > 0 ? 3 : 4;
+            int band = band(d, roundabout);
             String key = event + "|" + band;
             if (key.equals(lastKey)) {
                 return;
@@ -84,6 +86,26 @@ public final class AiwaysTurnCard {
                 snap(event, d);
             }
         });
+    }
+
+    /**
+     * How close the maneuver is, as the snapshot points: 0 far away or unknown, 1 a roundabout within 800 m,
+     * 2 within 300 m, 3 within 100 m, 4 at the turn. A new band (or a new maneuver) takes a snapshot.
+     */
+    static int band(int distance, boolean roundabout) {
+        if (distance < 0 || distance > 800) {
+            return 0;
+        }
+        if (distance > 300) {
+            return roundabout ? 1 : 0;
+        }
+        if (distance > 100) {
+            return 2;
+        }
+        if (distance > 0) {
+            return 3;
+        }
+        return 4;
     }
 
     /**
