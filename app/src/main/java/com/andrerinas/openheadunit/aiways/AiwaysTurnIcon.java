@@ -89,7 +89,7 @@ public final class AiwaysTurnIcon {
             if (!running) {
                 running = true;
                 loggedThisRoundabout = false;
-                sent = null;
+                png = null;
                 MAIN.post(TICK);
             }
         }
@@ -136,7 +136,7 @@ public final class AiwaysTurnIcon {
             int ch = Math.max(1, Math.min(h - y0, Math.round((BOTTOM - TOP) * h)));
             if (pixels == null || pixels.length != cw * ch) {
                 pixels = new int[cw * ch];
-                sent = null;
+                png = null;
             }
             full.getPixels(pixels, 0, cw, x0, y0, cw, ch);
             String why = check(pixels, cw, ch);
@@ -148,12 +148,15 @@ public final class AiwaysTurnIcon {
                 return;
             }
             long now = SystemClock.uptimeMillis();
-            boolean same = sent != null && Arrays.equals(pixels, sent);
+            boolean same = png != null && Arrays.equals(pixels, sent);
             if (same && now - sentAt < RESEND_MS) {
                 return;
             }
             if (!same) {
-                sent = pixels.clone();
+                if (sent == null || sent.length != pixels.length) {
+                    sent = new int[pixels.length];
+                }
+                System.arraycopy(pixels, 0, sent, 0, pixels.length);
                 Bitmap icon = Bitmap.createBitmap(pixels, cw, ch, Bitmap.Config.ARGB_8888);
                 ByteArrayOutputStream out = new ByteArrayOutputStream();
                 icon.compress(Bitmap.CompressFormat.PNG, 100, out);
