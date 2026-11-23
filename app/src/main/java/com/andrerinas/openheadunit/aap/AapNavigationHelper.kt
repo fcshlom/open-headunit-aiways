@@ -90,8 +90,10 @@ class AapNavigationHelper(
             cueText = prepared.cueText
         )
         context.applicationContext.sendBroadcast(intent, NavigationUpdateIntent.BROADCAST_PERMISSION)
-        // Aiways: snapshots of the screen's turn card while guiding; -1 ends a guidance
-        val guiding = prepared.distanceMeters != null || prepared.road.isNotEmpty()
+        // Aiways: snapshots of the screen's turn card while guiding; -1 ends a guidance. Ended: the
+        // stop event, or (as the broadcast's contract says) an update with neither distance nor road.
+        val guiding = navEventType != AapNavigation.NAV_EVENT_TYPE_STOP &&
+            (prepared.distanceMeters != null || prepared.road.isNotEmpty())
         com.andrerinas.openheadunit.aiways.AiwaysTurnCard.onGuidance(
             if (guiding) prepared.nextEventType else -1,
             prepared.distanceMeters

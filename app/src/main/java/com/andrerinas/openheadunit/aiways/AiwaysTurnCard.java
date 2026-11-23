@@ -37,6 +37,8 @@ public final class AiwaysTurnCard {
     private static final int EV_ROUNDABOUT_BOTH = 13;
 
     private static final Handler MAIN = new Handler(Looper.getMainLooper());
+    /** Guards lastKey, day, shotsToday and worker: the navigation thread decides, the main thread snaps. */
+    private static final Object LOCK = new Object();
     private static volatile WeakReference<TextureView> view = new WeakReference<>(null);
     private static Handler worker;
     private static String lastKey = "";
@@ -52,28 +54,30 @@ public final class AiwaysTurnCard {
     }
 
     /** From the navigation broadcast: every update of the next maneuver. */
-    public static synchronized void onGuidance(final int event, final Integer distanceMeters) {
-        if (event < 0) {
-            lastKey = "";
-            return;
+    public static void onGuidance(final int event, final Integer distanceMeters) {
+        final int d = distanceMeters != null ? distanceMeters : -1;
+        synchronized (LOCK) {
+            if (event < 0) {
+                lastKey = "";
+                return;
+            }
+            boolean roundabout = event == EV_ROUNDABOUT_ENTER || event == EV_ROUNDABOUT_EXIT || event == EV_ROUNDABOUT_BOTH;
+            int band = !roundabout || d < 0 || d > 800 ? 0 : d > 300 ? 1 : d > 100 ? 2 : d > 0 ? 3 : 4;
+            String key = event + "|" + band;
+            if (key.equals(lastKey)) {
+                return;
+            }
+            lastKey = key;
+            String today = new SimpleDateFormat("yyyy-MM-dd", Locale.US).format(new Date());
+            if (!today.equals(day)) {
+                day = today;
+                shotsToday = 0;
+            }
+            if (shotsToday >= MAX_PER_DAY) {
+                return;
+            }
+            shotsToday++;
         }
-        boolean roundabout = event == EV_ROUNDABOUT_ENTER || event == EV_ROUNDABOUT_EXIT || event == EV_ROUNDABOUT_BOTH;
-        int d = distanceMeters != null ? distanceMeters : -1;
-        int band = !roundabout || d < 0 || d > 800 ? 0 : d > 300 ? 1 : d > 100 ? 2 : d > 0 ? 3 : 4;
-        String key = event + "|" + band;
-        if (key.equals(lastKey)) {
-            return;
-        }
-        lastKey = key;
-        String today = new SimpleDateFormat("yyyy-MM-dd", Locale.US).format(new Date());
-        if (!today.equals(day)) {
-            day = today;
-            shotsToday = 0;
-        }
-        if (shotsToday >= MAX_PER_DAY) {
-            return;
-        }
-        shotsToday++;
         MAIN.post(new Runnable() {
             @Override
             public void run() {
@@ -82,46 +86,56 @@ public final class AiwaysTurnCard {
         });
     }
 
-    /** On the main thread (TextureView.getBitmap must be); the JPEG is made on a worker thread. */
+    /**
+     * On the main thread: TextureView.getBitmap must be called there, and the bitmap is compressed there too, so
+     * it never crosses threads (getBitmap(int, int) allocates a new one; it is recycled right after). Only the JPEG
+     * bytes go to the worker, which encodes them for the log.
+     */
     private static void snap(final int event, final int distance) {
         TextureView v = view.get();
         if (v == null || !v.isAvailable() || v.getWidth() <= 0 || v.getHeight() <= 0) {
             return;
         }
-        final Bitmap b;
+        Bitmap b = null;
+        final byte[] jpeg;
+        final int w;
+        final int h;
         try {
-            int h = Math.max(1, Math.round(WIDTH * v.getHeight() / (float) v.getWidth()));
-            b = v.getBitmap(WIDTH, h);
+            int height = Math.max(1, Math.round(WIDTH * v.getHeight() / (float) v.getWidth()));
+            b = v.getBitmap(WIDTH, height);
+            if (b == null) {
+                return;
+            }
+            w = b.getWidth();
+            h = b.getHeight();
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            b.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, out);
+            jpeg = out.toByteArray();
         } catch (RuntimeException | OutOfMemoryError e) {
             AiwaysLog.event("turncard", "cannot read the screen: " + e);
             return;
-        }
-        if (b == null) {
-            return;
+        } finally {
+            if (b != null) {
+                b.recycle();
+            }
         }
         worker().post(new Runnable() {
             @Override
             public void run() {
-                try {
-                    ByteArrayOutputStream out = new ByteArrayOutputStream();
-                    b.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, out);
-                    AiwaysLog.event("turncard", "frame " + b.getWidth() + "x" + b.getHeight() + " event=" + event + " in "
-                            + distance + " m jpeg=" + Base64.encodeToString(out.toByteArray(), Base64.NO_WRAP));
-                } catch (RuntimeException | OutOfMemoryError e) {
-                    AiwaysLog.event("turncard", "cannot encode the snapshot: " + e);
-                } finally {
-                    b.recycle();
-                }
+                AiwaysLog.event("turncard", "frame " + w + "x" + h + " event=" + event + " in " + distance + " m jpeg="
+                        + Base64.encodeToString(jpeg, Base64.NO_WRAP));
             }
         });
     }
 
-    private static synchronized Handler worker() {
-        if (worker == null) {
-            HandlerThread t = new HandlerThread("aiways-turncard");
-            t.start();
-            worker = new Handler(t.getLooper());
+    private static Handler worker() {
+        synchronized (LOCK) {
+            if (worker == null) {
+                HandlerThread t = new HandlerThread("aiways-turncard");
+                t.start();
+                worker = new Handler(t.getLooper());
+            }
+            return worker;
         }
-        return worker;
     }
 }
