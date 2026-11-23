@@ -83,3 +83,9 @@ The `NAVIGATION_UPDATE` broadcast carries four new extras:
 - `cue_text`: the nav app's own text for the next step (`NavigationCue.alternate_text`), or empty.
 
 `turn_number` and `turn_angle` now come only from fields the phone really set. An unset proto2 int reads 0, which used to hide the legacy `NextTurnDetail` values. The log line `Nav: NextTurnDetail` shows `image=<n> bytes` or `image=none`.
+
+## Snapshots of the turn card (4.0.0-aiways.12)
+
+Waze sends the car only "enter roundabout" and one picture: no exit number, no lanes, no angle (every turn in the launcher's log of 22 November). That picture once showed a left-exit roundabout with its exit on the right, while Waze's own turn card on the Android Auto screen was right and showed the lanes as well. The plan is to show that card on the driver's display. Step 1 is finding where Waze draws it.
+
+`AiwaysTurnCard` takes a snapshot of the projection (the TextureView, scaled to 960 px wide, JPEG) and writes it to the log as `[turncard] frame WxH event=<n> in <m> m jpeg=<base64>`. It does this when the next maneuver changes, and at a roundabout also at 800, 300, 100 and 0 m. There are at most 40 a day, because a frame shows the map, so where the car is. Only the TextureView projection, the Aiways default, can be read back. Step 2 crops the card from the frame and sends it to the launcher.

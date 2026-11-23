@@ -90,6 +90,12 @@ class AapNavigationHelper(
             cueText = prepared.cueText
         )
         context.applicationContext.sendBroadcast(intent, NavigationUpdateIntent.BROADCAST_PERMISSION)
+        // Aiways: snapshots of the screen's turn card while guiding; -1 ends a guidance
+        val guiding = prepared.distanceMeters != null || prepared.road.isNotEmpty()
+        com.andrerinas.openheadunit.aiways.AiwaysTurnCard.onGuidance(
+            if (guiding) prepared.nextEventType else -1,
+            prepared.distanceMeters
+        )
     }
 
     fun showNotificationForSnapshot(snapshot: NavigationSnapshot, distanceMeters: Int?) {

@@ -2456,6 +2456,8 @@ class AapProjectionActivity : SurfaceActivity(), IProjectionView.Callbacks, Vide
             )
             projectionView = textureView
             container.setBackgroundColor(Color.BLACK)
+            // Aiways: snapshots of the nav app's turn card for the driver's display (AiwaysTurnCard)
+            com.andrerinas.openheadunit.aiways.AiwaysTurnCard.attach(textureView)
         } else if (mode == Settings.ViewMode.GLES) {
             AppLog.i("Using GlProjectionView")
             val glView = GlProjectionView(this)
