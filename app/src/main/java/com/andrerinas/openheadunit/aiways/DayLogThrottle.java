@@ -15,8 +15,9 @@ import java.util.Map;
  * So a DEBUG or VERBOSE line is written only while its kind -- the line with its thread and every
  * number taken out -- has had fewer than {@link #PER_WINDOW} lines in the current
  * {@link #WINDOW_MS}; the rest are counted, and the next line of that kind in a later window says
- * how many were left out. INFO and above always go through. Used on the day log's writer thread
- * only, so it is not thread safe.
+ * how many were left out. INFO and above always go through. Called on the day log's writer thread;
+ * synchronized all the same, so a caller on another thread cannot corrupt it (the lock is never
+ * contended there).
  */
 final class DayLogThrottle {
     static final long WINDOW_MS = 10L * 60 * 1000;
@@ -37,7 +38,7 @@ final class DayLogThrottle {
      * The text to write for a DEBUG or VERBOSE line at {@code now}, or null to leave it out. A
      * line that follows left-out lines of its kind carries their count.
      */
-    String admit(String message, long now) {
+    synchronized String admit(String message, long now) {
         String key = kindOf(message);
         Kind k = kinds.get(key);
         if (k == null) {
@@ -64,7 +65,7 @@ final class DayLogThrottle {
         return text;
     }
 
-    /** Drops the kinds with nothing pending whose window is over; all of them if that is not enough. */
+    /** Drops the kinds with nothing pending whose window is over; all of them if that is not enough. Under the lock. */
     private void forgetIdle(long now) {
         java.util.Iterator<Kind> it = kinds.values().iterator();
         while (it.hasNext()) {

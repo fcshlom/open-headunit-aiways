@@ -32,7 +32,7 @@ public final class AiwaysLog {
     private static final long MAX_BYTES_PER_DAY = 15L * 1024 * 1024;
     private static volatile File dir;
     private static volatile Handler writer;
-    /** Used on the writer thread only. */
+    /** Called on the writer thread; synchronized itself as well. */
     private static final DayLogThrottle throttle = new DayLogThrottle();
 
     private AiwaysLog() {

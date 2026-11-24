@@ -682,9 +682,10 @@ class AapService : Service() {
                 ) { goAsync() }
                 // A discovery probe holds its connection to the phone's server open until it is
                 // dialled; one the power cuts would leave the server stuck just like a session.
-                Thread {
+                // Closing a socket is network I/O, so not on the main thread.
+                serviceScope.launch(Dispatchers.IO) {
                     com.andrerinas.openheadunit.connection.HeldServerSocket.discardAll()
-                }.apply { name = "AapService-CarOffProbes"; start() }
+                }
                 return
             }
             AppLog.i("WakeDetect: car switched on (launcher, CARSET_PWR_STS)")
