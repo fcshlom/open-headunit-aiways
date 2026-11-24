@@ -976,6 +976,8 @@ class CommManager(
      * the streak reaches the point where the retry cadence drops.
      */
     private fun noteHandshakeOutcome(silent: Boolean) {
+        // Aiways: the launcher shows the driver a hint once the phone's server stays deaf.
+        com.andrerinas.openheadunit.aiways.AiwaysServerHint.noteFailedHandshake(context, silent, lastAttemptedEndpoint)
         if (!silent) {
             // Any other failure means this is not the deaf-peer case, so the streak — and the
             // backoff resting on it — starts over.

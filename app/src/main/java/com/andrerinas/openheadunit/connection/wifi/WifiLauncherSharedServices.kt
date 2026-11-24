@@ -5,6 +5,8 @@ import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.SystemClock
 import com.andrerinas.openheadunit.App
+import com.andrerinas.openheadunit.aiways.AiwaysCarPower
+import com.andrerinas.openheadunit.app.AccPowerState
 import com.andrerinas.openheadunit.aap.AapService
 import com.andrerinas.openheadunit.aap.AapService.Companion.scanningState
 import com.andrerinas.openheadunit.connection.ConnectionStage
@@ -192,6 +194,11 @@ class WifiLauncherSharedServices(val service: AapService) {
             AppLog.i("AapService: Discovery not started — a connection is live or being set up")
             return
         }
+        // Aiways: nothing dials the phone while the launcher says the car is off; see AiwaysCarPower.
+        if (AiwaysCarPower.holdsOff(AccPowerState.offAction)) {
+            AppLog.i("AapService: Discovery not started — the car is off")
+            return
+        }
         if (wirelessServer == null && !oneShot)
             return
 
@@ -209,7 +216,8 @@ class WifiLauncherSharedServices(val service: AapService) {
                 service,
                 object : NetworkDiscovery.Listener {
                     override fun onServiceFound(ip: String, port: Int, socket: Socket?) {
-                        if (commManager.isBusy) {
+                        // Aiways: a sweep that was under way when the car went off finds nothing to dial.
+                        if (commManager.isBusy || AiwaysCarPower.holdsOff(AccPowerState.offAction)) {
                             // Connected, or connecting, by the time this callback fired; discard the
                             // socket. isBusy rather than isConnected because handing it to connect()
                             // during a connect in flight only gets it closed one frame later.

@@ -21,6 +21,8 @@ import java.util.Locale;
  * video frame) filled that by the first drive of the day, and after it this package's events were lost too, the
  * turn card snapshots of 23 November among them (4.0.0-aiways.13). This package's own events go on up to
  * {@link #MAX_BYTES_PER_DAY} (the backend takes 20 MB a day file). Writes happen on their own thread.
+ * AppLog's DEBUG and VERBOSE lines pass a {@link DayLogThrottle} first, so the per-frame ones no longer use up
+ * the tee's share before the day's session ends are written (4.0.0-aiways.16).
  */
 public final class AiwaysLog {
     private static final int KEEP_DAYS = 7;
@@ -30,6 +32,8 @@ public final class AiwaysLog {
     private static final long MAX_BYTES_PER_DAY = 15L * 1024 * 1024;
     private static volatile File dir;
     private static volatile Handler writer;
+    /** Called on the writer thread; synchronized itself as well. */
+    private static final DayLogThrottle throttle = new DayLogThrottle();
 
     private AiwaysLog() {
     }
@@ -66,9 +70,30 @@ public final class AiwaysLog {
         write("[" + tag + "] " + message, MAX_BYTES_PER_DAY);
     }
 
-    /** Tee from AppLog: every line it writes, with its priority letter. */
-    public static void line(int priority, String message) {
-        write(level(priority) + " " + message, MAX_TEE_BYTES);
+    /**
+     * Tee from AppLog: every line it writes, with its priority letter. DEBUG and VERBOSE lines that repeat (per
+     * video frame, per GPS fix) are thinned out by {@link DayLogThrottle}.
+     */
+    public static void line(int priority, final String message) {
+        if (priority >= Log.INFO) {
+            write(level(priority) + " " + message, MAX_TEE_BYTES);
+            return;
+        }
+        final Handler h = writer;
+        if (h == null) {
+            return;
+        }
+        final long now = AiwaysConfig.now();
+        final String letter = level(priority);
+        h.post(new Runnable() {
+            @Override
+            public void run() {
+                String admitted = throttle.admit(message, now);
+                if (admitted != null) {
+                    append(now, letter + " " + admitted, MAX_TEE_BYTES);
+                }
+            }
+        });
     }
 
     private static String level(int priority) {

@@ -29,6 +29,8 @@ import androidx.core.content.ContextCompat
 import androidx.core.content.IntentCompat
 import androidx.core.content.PermissionChecker
 import com.andrerinas.openheadunit.App
+import com.andrerinas.openheadunit.aiways.AiwaysCarPower
+import com.andrerinas.openheadunit.aiways.AiwaysServerHint
 import com.andrerinas.openheadunit.app.AccPowerState
 import com.andrerinas.openheadunit.app.ActivityLaunchPolicy
 import com.andrerinas.openheadunit.app.BootCompleteReceiver
@@ -663,6 +665,44 @@ class AapService : Service() {
     private var lastWakeRearmTimestamp = 0L
 
     /**
+     * Aiways: the launcher's car-off / car-on, see [AiwaysCarPower]. The off is handled like the ACC
+     * off of other units (an explicit signal: every route is closed with a ByeBye), and on top of
+     * that nothing dials the phone again until the car is on: a session started in the 20 s the unit
+     * runs on would vanish just the same.
+     */
+    private val aiwaysCarPowerReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            val on = AiwaysCarPower.isOn(intent) ?: return
+            if (!on) {
+                AppLog.i("WakeDetect: car switched off (launcher, CARSET_PWR_STS)")
+                commManager.pauseForSleep()
+                AccPowerState.noteOff(AiwaysCarPower.OFF_REASON)
+                maybeTearDownBeforeLinkGoes(
+                    LinkLossTrigger.ACC_POWER_LOST, accSignalIsExplicit = true
+                ) { goAsync() }
+                // A discovery probe holds its connection to the phone's server open until it is
+                // dialled; one the power cuts would leave the server stuck just like a session.
+                // Closing a socket is network I/O, so not on the main thread.
+                serviceScope.launch(Dispatchers.IO) {
+                    com.andrerinas.openheadunit.connection.HeldServerSocket.discardAll()
+                }
+                return
+            }
+            AppLog.i("WakeDetect: car switched on (launcher, CARSET_PWR_STS)")
+            AccPowerState.noteOn()
+            // Whether or not the off was still standing: a SCREEN_ON in between clears it without
+            // restarting anything. NetworkDiscovery serialises its scans, so a loop that is still
+            // running only gets its next sweep now.
+            if (!commManager.isBusy && wifiLauncherManager.isActive &&
+                wifiLauncherManager.active?.hasLocalDiscovery() == true
+            ) {
+                AppLog.i("AapService: car on, restarting discovery")
+                wifiLauncherManager.restartDiscovery()
+            }
+        }
+    }
+
+    /**
      * Runtime-registered receiver for system wake/boot/power/screen events.
      *
      * On Chinese head units with Quick Boot (hibernate/resume), standard broadcasts
@@ -1199,6 +1239,8 @@ class AapService : Service() {
         val uptime =
             if (projectingSinceMs == 0L) 0L else SystemClock.elapsedRealtime() - projectingSinceMs
         AppLog.i("AapService: session state $state${if (reason.isEmpty()) "" else " ($reason)"}")
+        // Aiways: a session that projects proves the phone's head unit server answers (driver hint).
+        if (state == SessionStateIntent.STATE_PROJECTING) AiwaysServerHint.noteAnswered()
         try {
             sendBroadcast(SessionStateIntent(state, transport, reason, uptime))
         } catch (e: Exception) {
@@ -1964,6 +2006,12 @@ class AapService : Service() {
             AppLog.i("AapService: not reconnecting by itself, the projection screen could not be raised.")
             return
         }
+        // A session started while the car is off would be cut by the power going, without a ByeBye,
+        // and leave the phone's head unit server stuck (AiwaysCarPower). The car coming on resumes it.
+        if (AiwaysCarPower.holdsOff(AccPowerState.offAction)) {
+            AppLog.i("AapService: Disconnected while the car is off. Not reconnecting until it is on.")
+            return
+        }
 
         val settings = App.provide(this).settings
 
@@ -2162,6 +2210,13 @@ class AapService : Service() {
             ContextCompat.RECEIVER_EXPORTED
         )
         AppLog.i("Registered wake detection receiver (${wakeFilter.countActions()} actions)")
+        // Aiways: only the launcher, signed with the same key, can send this one.
+        ContextCompat.registerReceiver(
+            this, aiwaysCarPowerReceiver,
+            IntentFilter(AiwaysCarPower.ACTION),
+            AiwaysCarPower.PERMISSION, null,
+            ContextCompat.RECEIVER_EXPORTED
+        )
 
         // Registered whether or not a device is chosen: the list can change while the service
         // runs, and the handler returns on its first line when it is empty.
@@ -2959,6 +3014,7 @@ class AapService : Service() {
         usbLauncherManager.unregister()
         try { unregisterReceiver(mediaButtonReceiver) } catch (_: Exception) {}
         try { unregisterReceiver(wakeDetectReceiver) } catch (_: Exception) {}
+        try { unregisterReceiver(aiwaysCarPowerReceiver) } catch (_: Exception) {}
         sleepReplayJob?.cancel()
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) {
             try { unregisterReceiver(legacyWifiJoinReceiver) } catch (_: Exception) {}
