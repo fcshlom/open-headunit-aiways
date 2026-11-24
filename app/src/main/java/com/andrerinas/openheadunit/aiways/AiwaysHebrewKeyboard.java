@@ -61,7 +61,11 @@ public final class AiwaysHebrewKeyboard {
     private final FrameLayout container;
     private final EndpointSource source;
     private final Handler main = new Handler(Looper.getMainLooper());
+    /** Sends, one at a time. The probe runs on its own thread so a send never waits behind it. */
     private final ExecutorService io = Executors.newSingleThreadExecutor();
+    private final ExecutorService probeIo = Executors.newSingleThreadExecutor();
+    /** A send is on its way: further taps on Send are ignored until it answers. */
+    private volatile boolean sending;
 
     private TextView button;
     private LinearLayout panel;
@@ -93,6 +97,7 @@ public final class AiwaysHebrewKeyboard {
 
     public void release() {
         io.shutdownNow();
+        probeIo.shutdownNow();
     }
 
     private int dp(float v) {
@@ -117,7 +122,7 @@ public final class AiwaysHebrewKeyboard {
         bg.setShape(GradientDrawable.OVAL);
         bg.setColor(0x99000000);
         bg.setStroke(dp(1), 0x66FFFFFF);
-        b.setBackgroundDrawable(bg);
+        b.setBackground(bg);
         int size = dp(52);
         b.setLayoutParams(new FrameLayout.LayoutParams(size, size));
         b.setOnTouchListener(new DragOrTap());
@@ -338,7 +343,7 @@ public final class AiwaysHebrewKeyboard {
         GradientDrawable bg = new GradientDrawable();
         bg.setCornerRadius(dp(8));
         bg.setColor(color);
-        t.setBackgroundDrawable(bg);
+        t.setBackground(bg);
         t.setClickable(true);
         t.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -377,7 +382,7 @@ public final class AiwaysHebrewKeyboard {
             AiwaysLog.event(TAG, "probe: no phone address (endpoint " + source.endpoint() + ")");
             return;
         }
-        io.execute(new Runnable() {
+        probeIo.execute(new Runnable() {
             @Override
             public void run() {
                 try {
@@ -398,7 +403,7 @@ public final class AiwaysHebrewKeyboard {
 
     private void send() {
         final String typed = text;
-        if (typed.isEmpty()) {
+        if (typed.isEmpty() || sending) {
             return;
         }
         final String host = AiwaysHebrewKeys.phoneHost(source.endpoint());
@@ -407,6 +412,7 @@ public final class AiwaysHebrewKeyboard {
             return;
         }
         setStatus("שולח…");
+        sending = true;
         io.execute(new Runnable() {
             @Override
             public void run() {
@@ -430,6 +436,8 @@ public final class AiwaysHebrewKeyboard {
                 } catch (Exception e) {
                     AiwaysLog.event(TAG, "send to " + host + " failed: " + e);
                     setStatus("השליחה נכשלה: " + e.getClass().getSimpleName());
+                } finally {
+                    sending = false;
                 }
             }
         });
