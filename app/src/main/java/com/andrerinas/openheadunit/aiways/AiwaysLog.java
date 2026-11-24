@@ -74,7 +74,7 @@ public final class AiwaysLog {
      * Tee from AppLog: every line it writes, with its priority letter. DEBUG and VERBOSE lines that repeat (per
      * video frame, per GPS fix) are thinned out by {@link DayLogThrottle}.
      */
-    public static void line(int priority, String message) {
+    public static void line(int priority, final String message) {
         if (priority >= Log.INFO) {
             write(level(priority) + " " + message, MAX_TEE_BYTES);
             return;
@@ -85,11 +85,10 @@ public final class AiwaysLog {
         }
         final long now = AiwaysConfig.now();
         final String letter = level(priority);
-        final String text = message;
         h.post(new Runnable() {
             @Override
             public void run() {
-                String admitted = throttle.admit(text, now);
+                String admitted = throttle.admit(message, now);
                 if (admitted != null) {
                     append(now, letter + " " + admitted, MAX_TEE_BYTES);
                 }
