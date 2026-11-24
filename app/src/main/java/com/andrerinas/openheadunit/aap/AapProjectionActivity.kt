@@ -129,6 +129,8 @@ class AapProjectionActivity : SurfaceActivity(), IProjectionView.Callbacks, Vide
     // instead of persisting to Settings. This keeps toggles local to the Activity lifecycle.
     private var activityFullscreenOverride: Settings.FullscreenMode? = null
     private var touchOverlayView: OverlayTouchView? = null
+    /** Hebrew typing for Android Auto (prototype): the unit's own keyboard, text goes to the phone. */
+    private var hebrewKeyboard: com.andrerinas.openheadunit.aiways.AiwaysHebrewKeyboard? = null
     private val performanceOverlay by lazy {
         PerformanceOverlay(settings) { videoDecoder.lastFrameRenderedMs }
     }
@@ -1173,6 +1175,13 @@ class AapProjectionActivity : SurfaceActivity(), IProjectionView.Callbacks, Vide
         // Ensure loading overlay is on top of everything
         loadingOverlay?.bringToFront()
         performanceOverlay.bringToFront()
+
+        // Above the touch overlay so its button takes its own taps; below the loading overlay,
+        // which comes back to the front whenever it shows.
+        hebrewKeyboard = com.andrerinas.openheadunit.aiways.AiwaysHebrewKeyboard.attach(this, container) {
+            commManager.lastAttemptedEndpoint
+        }
+        loadingOverlay?.bringToFront()
 
         // Set up custom loading screen if configured
         setupCustomLoadingScreen()
@@ -2331,6 +2340,8 @@ class AapProjectionActivity : SurfaceActivity(), IProjectionView.Callbacks, Vide
         } ?: AppLog.i("Decoder detach (surfaceDestroyed) skipped: activity has no owned surface")
         ownedSurface = null
         isSurfaceSet = false
+        hebrewKeyboard?.release()
+        hebrewKeyboard = null
         super.onDestroy()
         autoStartOfferTimer?.cancel()
         autoStartOfferTimer = null
