@@ -7,8 +7,10 @@ import java.io.ByteArrayOutputStream
  * (`ffmpeg -i dump.h264 frame%02d.png`). Pure, so the scanning is unit-tested.
  *
  * It starts at the first keyframe (IDR), with the codec config (SPS and PPS) in front of it, and
- * ends after [maxFrames] frames, [maxBytes] bytes or [maxMs] milliseconds, whichever comes first.
- * Frames before the first keyframe cannot be decoded and are only counted.
+ * ends after [maxFrames] frames, [maxMs] milliseconds, or before the frame that would take it past
+ * [maxBytes], whichever comes first. [maxBytes] is a hard limit: the dump never holds more. A
+ * keyframe that does not fit on its own ends the dump empty ([frames] 0). Frames before the first
+ * keyframe cannot be decoded and are only counted.
  */
 internal class AiwaysClusterDump(
     private val maxFrames: Int = 60,
@@ -44,7 +46,12 @@ internal class AiwaysClusterDump(
                 return false
             }
             startedAtMs = nowMs
-            codecConfig?.let { out.write(it, 0, it.size) }
+            val config = codecConfig
+            if (config != null && config.size + length <= maxBytes) out.write(config, 0, config.size)
+        }
+        if (out.size() + length > maxBytes) {
+            done = true
+            return true
         }
         out.write(data, offset, length)
         frames++

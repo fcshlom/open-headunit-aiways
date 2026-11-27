@@ -75,7 +75,8 @@ internal object AiwaysClusterTest {
     /** After this many frames the rung counts as streamed. */
     private const val STREAMED_AFTER_FRAMES = 10L
     private const val DUMPS_PER_DAY = 3
-    private const val DUMP_PART_CHARS = 48 * 1024
+    /** 36 KB of H.264 per log line, 48 KB of base64. A multiple of 3, see [writeDump]. */
+    private const val DUMP_PART_BYTES = 36 * 1024
 
     private val lock = Any()
 
@@ -350,17 +351,22 @@ internal object AiwaysClusterTest {
     private fun writeDump(d: AiwaysClusterDump) {
         val context = synchronized(lock) { appContext } ?: return
         worker.post {
+            if (d.frames == 0) {
+                log("no dump: the first keyframe alone is larger than the dump's limit")
+                return@post
+            }
             val raw = d.bytes()
-            val b64 = Base64.encodeToString(raw, Base64.NO_WRAP)
-            val parts = (b64.length + DUMP_PART_CHARS - 1) / DUMP_PART_CHARS
+            val parts = (raw.size + DUMP_PART_BYTES - 1) / DUMP_PART_BYTES
             val id = System.currentTimeMillis() / 1000
             log("dump $id: ${d.frames} frames from the first keyframe (${d.skippedBeforeKeyframe} before it), " +
                 "${raw.size} B of H.264 in $parts parts. Join the parts in order, base64-decode to .h264, " +
                 "then ffmpeg -i dump.h264 frame%02d.png")
+            // One part at a time, so only one part's text is ever in memory. A part is a multiple of
+            // 3 bytes, so the parts' base64 joined is the base64 of the whole dump.
             for (i in 0 until parts) {
-                val from = i * DUMP_PART_CHARS
-                val to = minOf(b64.length, from + DUMP_PART_CHARS)
-                log("dump $id part ${i + 1}/$parts base64=${b64.substring(from, to)}")
+                val from = i * DUMP_PART_BYTES
+                val length = minOf(raw.size - from, DUMP_PART_BYTES)
+                log("dump $id part ${i + 1}/$parts base64=" + Base64.encodeToString(raw, from, length, Base64.NO_WRAP))
             }
             countDump(context)
         }

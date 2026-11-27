@@ -64,4 +64,19 @@ class AiwaysClusterDumpTest {
         val byBytes = AiwaysClusterDump(maxFrames = 100, maxBytes = idr.size)
         assertTrue(byBytes.onFrame(idr, 0, idr.size, 0L))
     }
+
+    @Test
+    fun `never holds more than maxBytes, even for one large frame`() {
+        val d = AiwaysClusterDump(maxFrames = 100, maxBytes = idr.size + p.size - 1)
+        assertFalse(d.onFrame(idr, 0, idr.size, 0L))
+        // The next frame would cross the limit: the dump ends without it.
+        assertTrue(d.onFrame(p, 0, p.size, 1L))
+        assertEquals(1, d.frames)
+        assertArrayEquals(idr, d.bytes())
+
+        val tooBig = AiwaysClusterDump(maxBytes = idr.size - 1)
+        assertTrue(tooBig.onFrame(idr, 0, idr.size, 0L))
+        assertEquals(0, tooBig.frames)
+        assertEquals(0, tooBig.bytes().size)
+    }
 }

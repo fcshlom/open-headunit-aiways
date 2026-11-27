@@ -158,7 +158,7 @@ In the day log, look for `[cluster]`:
 | `strike against rung R: ...`, `not announced: the test is off ...` | the test stopped itself |
 | `dump <id> part i/N base64=...` | a few seconds of the raw stream |
 
-**Seeing the map:** once per stream start, at most 3 a day, the app writes up to 4 s (60 frames, 1 MB) of the stream from its first keyframe, with the codec config in front, base64 in 48 KB parts. Like the `[turncard]` snapshots it shows the map, so where the car was. To turn the dumps into pictures:
+**Seeing the map:** once per stream start, at most 3 a day, the app writes up to 4 s (60 frames, never more than 1 MB) of the stream from its first keyframe, with the codec config in front, base64 in 48 KB parts. Like the `[turncard]` snapshots it shows the map, so where the car was. To turn the dumps into pictures:
 
 ```sh
 python3 aiways/cluster_dump.py headunit-YYYY-MM-DD.log out/
