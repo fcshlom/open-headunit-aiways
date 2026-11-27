@@ -170,3 +170,20 @@ python3 aiways/cluster_dump.py headunit-YYYY-MM-DD.log out/
 - No `the phone opened CLUSTER_VIDEO` after `announcing ...`: the phone ignores the description.
 - Sessions that end right after `announcing ...`, followed by a strike: the phone refuses it.
 - `START` and frames while Waze or Google Maps navigates: the map is there. The next build decodes it into a window on the second display, in the launcher's 270 x 480 area.
+
+## The map on the driver's display (4.0.0-aiways.21)
+
+The first car test of 4.0.0-aiways.20 (27 November) worked: the phone accepted the driver's display 2 s after connecting, and streamed its map at about 27 frames a second, 70 KB/s, 1280 x 720, for as long as navigation ran. The main screen did not suffer: 29–30 fps decoded, nothing dropped. The map is the map only: no turn card, no distance.
+
+Now `AiwaysClusterMap` shows that map on the driver's display when the launcher asks for it. The launcher decides between its own turn card ("arrows") and the map with its banner on top ("map"), and can be switched from its bottom bar, by voice and on the Live data screen.
+
+- **Between the two apps:**
+  - The launcher sends `com.aiways.headunit.CLUSTER_MAP` with `show` every few seconds while guidance runs. Without a request for 10 s the map goes, so a launcher that died cannot leave it standing.
+  - This app answers with `com.adayo.radio.CLUSTER_MAP_STATE` (`showing`, `reason`) on every change and every 2 s. `showing` is true only while frames reach the panel (one in the last 3 s). The launcher draws its full card again when the answer is false or stops coming.
+  - Both go under the signature permission `com.aiways.permission.HEADUNIT_LINK`.
+- **The window:** a TextureView of 270 x 480 at the top-left corner of the second display, the part the driver's display shows. It uses `TYPE_SYSTEM_OVERLAY`: above Adayo's page (`TYPE_SYSTEM_ALERT`) and below the launcher's window (`TYPE_SYSTEM_ERROR`), so the launcher's banner is drawn over the map. The picture is scaled so the phone's drawing area fills the panel's height, centred and cut at the sides (`AiwaysClusterGeometry`): 1280 x 720 shows its middle 405 x 720 at two thirds, and the fitted 800 x 480 description its middle 270 x 480 at full size.
+- **The decoder** (`AiwaysClusterDecoder`) is a second hardware decoder on its own thread. Frames go straight from the reader thread into a queue of 30. When the queue is full the backlog is dropped and the decoder waits for the next keyframe, so the map never smears.
+- **Keyframes:** a decoder that joins a running stream needs one, and the phone sends one only every minute or so. So the window asks for one with a focus release on channel 14 and a regain 400 ms later, the cycle that works for the main screen. It asks again every 5 s while the decoder still waits. The phone answers the release with STOP and the regain with a new START. A STOP keeps the window: the map is only reported as not showing until frames come again.
+- **Failures:** if the window cannot be added or the decoder fails, nothing is retried for 60 s, and the launcher keeps its arrows.
+
+In the day log, look for `[clustermap]`: the launcher's requests, `window added`, `decoder started`, `asked the phone for a keyframe`, `first frame on the panel`, `map on the driver's display` or `map not showing: <why>`, and every 30 s how many frames reached the panel.

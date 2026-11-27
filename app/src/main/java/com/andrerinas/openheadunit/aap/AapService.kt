@@ -2221,6 +2221,13 @@ class AapService : Service() {
             AiwaysCarPower.PERMISSION, null,
             ContextCompat.RECEIVER_EXPORTED
         )
+        // Aiways: the launcher's choice between the map and its arrows on the driver's display.
+        ContextCompat.registerReceiver(
+            this, com.andrerinas.openheadunit.aiways.AiwaysClusterMap.receiver,
+            IntentFilter(com.andrerinas.openheadunit.aiways.AiwaysClusterMap.ACTION_SHOW),
+            AiwaysCarPower.PERMISSION, null,
+            ContextCompat.RECEIVER_EXPORTED
+        )
 
         // Registered whether or not a device is chosen: the list can change while the service
         // runs, and the handler returns on its first line when it is empty.
@@ -3019,6 +3026,7 @@ class AapService : Service() {
         try { unregisterReceiver(mediaButtonReceiver) } catch (_: Exception) {}
         try { unregisterReceiver(wakeDetectReceiver) } catch (_: Exception) {}
         try { unregisterReceiver(aiwaysCarPowerReceiver) } catch (_: Exception) {}
+        try { unregisterReceiver(com.andrerinas.openheadunit.aiways.AiwaysClusterMap.receiver) } catch (_: Exception) {}
         sleepReplayJob?.cancel()
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) {
             try { unregisterReceiver(legacyWifiJoinReceiver) } catch (_: Exception) {}
