@@ -7,8 +7,9 @@ import com.google.protobuf.Message
 
 
 
-class VideoFocusEvent(gain: Boolean, unsolicited: Boolean)
-    : AapMessage(Channel.ID_VID, Media.MsgType.MEDIA_MESSAGE_VIDEO_FOCUS_NOTIFICATION_VALUE, makeProto(gain, unsolicited)) {
+/** [channel]: the main screen's video channel, or (Aiways) the driver's display's, Channel.ID_CLUSTER_VID. */
+class VideoFocusEvent(gain: Boolean, unsolicited: Boolean, channel: Int = Channel.ID_VID)
+    : AapMessage(channel, Media.MsgType.MEDIA_MESSAGE_VIDEO_FOCUS_NOTIFICATION_VALUE, makeProto(gain, unsolicited)) {
 
     companion object {
         private fun makeProto(gain: Boolean, unsolicited: Boolean): Message {
