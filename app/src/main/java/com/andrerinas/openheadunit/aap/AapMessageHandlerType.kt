@@ -2,6 +2,8 @@ package com.andrerinas.openheadunit.aap
 
 import android.content.Context
 import com.andrerinas.openheadunit.aap.protocol.Channel
+import com.andrerinas.openheadunit.aap.protocol.proto.Media
+import com.andrerinas.openheadunit.aiways.AiwaysClusterTest
 import com.andrerinas.openheadunit.decoder.audio.MicRecorder
 import com.andrerinas.openheadunit.aap.protocol.proto.MediaPlayback
 import com.andrerinas.openheadunit.utils.AppLog
@@ -64,11 +66,26 @@ internal class AapMessageHandlerType(
         // an explicit bound for peers exceeding their window. This handoff keeps video work
         // off the shared receive thread so audio can continue to be read and acknowledged.
         if (message.channel == Channel.ID_VID) {
+            // Aiways: the cluster test holds its focus grant until the main picture runs.
+            if (msgType == 0) AiwaysClusterTest.onMainVideo()
             // False means control traffic on the video channel, which falls through to step 5 as
             // it always has. The video thread still sees it either way.
             if (transport.dispatchVideo(message)) {
                 return
             }
+        }
+
+        // 1b. Aiways: the driver's display's video (DATA and CODEC_CONFIG). Its messages arrive
+        // whole, since the reassembler streams fragments only for ID_VID. Counted and dumped, not
+        // decoded; a complete DATA returns its credit like the main stream's.
+        if (message.channel == Channel.ID_CLUSTER_VID &&
+            flags.toInt() and AapMessageFraming.FLAG_BIT_CONTROL == 0 &&
+            (msgType == Media.MsgType.MEDIA_MESSAGE_DATA_VALUE || msgType == Media.MsgType.MEDIA_MESSAGE_CODEC_CONFIG_VALUE)) {
+            AiwaysClusterTest.onMedia(message)
+            if (AapMessageFraming.completesMediaData(msgType, flags.toInt())) {
+                transport.sendMediaAck(message.channel)
+            }
+            return
         }
 
         // 2. Try processing as Audio stream (Speech, System, Media)

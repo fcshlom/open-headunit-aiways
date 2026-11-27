@@ -130,3 +130,43 @@ The likely cause is the end of the morning drive of 23 November: the car was swi
 Android Auto's keyboard is drawn by the phone and has no Hebrew layout, and the projection protocol cannot carry text (its input channel sends key codes, which the phone maps to Latin letters). 4.0.0-aiways.17 and .18 tried a workaround: the unit showed its own Hebrew keyboard and sent the text over TCP 47110 to an accessibility service in aiwaysapp (build 102), which wrote it into the focused text field.
 
 Result in the car (25 and 26 November 2026): the text went in only when the field was open on the phone's own screen. The service did not reach the search field on Android Auto's screen. Over USB there is no network path to the phone at all. That made it too cumbersome, so both sides were removed (this app in 4.0.0-aiways.19, aiwaysapp in build 103). A follow-up idea, opening a Waze search on the phone from the text, would still need a component on the phone and was dropped with it.
+
+## A map for the driver's display: the cluster test (4.0.0-aiways.20)
+
+The launcher already draws the next turn on the driver's display: the head unit's second display (1920 x 720) goes to the driver's display, which shows its top-left 270 x 480 in the right-hand panel (launcher `ClusterNav`). Android Auto can send a map for exactly such a screen. A head unit announces an extra video sink whose `display_type` is `CLUSTER`, and the phone's navigation app renders a second, separate map video for it. Google's Desktop Head Unit tests this with `[display:cluster]`, `displaytype = cluster`. DiAuto, an Open Headunit fork for BYD cars, shows Waze's map on the dashboard this way (its PR #44). In DiAuto's tests Google Maps on one phone restarted the projection when guidance began (PR #43, unresolved), so Waze is the better first try.
+
+This build only asks and listens. Nothing is decoded or shown on the car yet. `AiwaysClusterTest`:
+
+- **Announces** the driver's display on every connection: a video sink on channel 14 (`display_id` 1, `display_type` CLUSTER, H.264, 30 fps) and an input service bound to display 1 on channel 15 (D-pad keys only), as aa-proxy-rs does. Our generated proto classes lack those fields (`MediaSinkService` 6 and 7, `InputSourceService` 5), so they go out as unknown fields. The protocol version stays 1.2, as in DiAuto's merged build.
+- **Answers like a car:** setup is answered ready (`max_unacked` 4). A video focus request on channel 14 is answered with the mode asked for. On the main channel a NATIVE request means "the driver left Android Auto", so channel 14 never reaches that code. The app's own focus grant waits until the main picture has run for 1.5 s; granted earlier, a phone can leave the main screen on "Android Auto is starting". Every complete frame is acked.
+- **Two descriptions, one per connection** (`AiwaysClusterLadder`):
+  - Rung 0 is 1280 x 720 with no margins, density 160: what a phone accepted in DiAuto's tests.
+  - Rung 1 is tried once rung 0 has streamed 10 frames: 800 x 480 with a 530 px width margin, so the phone draws into the middle 270 x 480, the size of the panel, pixel for pixel.
+- **Stops by itself:** a session that announced the driver's display and then ended within 2 minutes of service discovery, or within 30 s of the phone starting the cluster stream, counts as a strike against its rung. The driver leaving Android Auto, a settings restart and the car going off do not count. A strike on rung 1 goes back to rung 0. A strike on rung 0 stops announcing for the rest of this version. The next build starts clean.
+
+In the day log, look for `[cluster]`:
+
+| Line | Means |
+|---|---|
+| `announcing the driver's display as a cluster: rung N ...` | sent with service discovery |
+| `the phone opened CLUSTER_VIDEO (channel 14 ...)`, `setup from the phone` | the phone accepted the description |
+| `video focus request: mode ...`, `granted the cluster video focus` | the focus exchange |
+| `START: the phone starts the cluster stream ...` | the phone is sending a map (expected only while navigating) |
+| `codec config`, `first frame`, `stream: N frames, K kB in 30 s` | the stream itself |
+| `rung 0 streams. The next connection announces rung 1 ...` | rung 0 worked |
+| `session ... after N s with rung R: F cluster frames` | the end of every session that announced it |
+| `strike against rung R: ...`, `not announced: the test is off ...` | the test stopped itself |
+| `dump <id> part i/N base64=...` | a few seconds of the raw stream |
+
+**Seeing the map:** once per stream start, at most 3 a day, the app writes up to 4 s (60 frames, 1 MB) of the stream from its first keyframe, with the codec config in front, base64 in 48 KB parts. Like the `[turncard]` snapshots it shows the map, so where the car was. To turn the dumps into pictures:
+
+```sh
+python3 aiways/cluster_dump.py headunit-YYYY-MM-DD.log out/
+# out/cluster-<id>.h264, and out/cluster-<id>-NN.png when ffmpeg is installed
+```
+
+**What decides the next step:**
+
+- No `the phone opened CLUSTER_VIDEO` after `announcing ...`: the phone ignores the description.
+- Sessions that end right after `announcing ...`, followed by a strike: the phone refuses it.
+- `START` and frames while Waze or Google Maps navigates: the map is there. The next build decodes it into a window on the second display, in the launcher's 270 x 480 area.

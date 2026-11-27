@@ -1241,6 +1241,10 @@ class AapService : Service() {
         AppLog.i("AapService: session state $state${if (reason.isEmpty()) "" else " ($reason)"}")
         // Aiways: a session that projects proves the phone's head unit server answers (driver hint).
         if (state == SessionStateIntent.STATE_PROJECTING) AiwaysServerHint.noteAnswered()
+        // Aiways: a session that announced the driver's display and ended early stops that test.
+        if (state == SessionStateIntent.STATE_DISCONNECTED || state == SessionStateIntent.STATE_FAILED) {
+            com.andrerinas.openheadunit.aiways.AiwaysClusterTest.onSessionEnd(this, state, reason)
+        }
         try {
             sendBroadcast(SessionStateIntent(state, transport, reason, uptime))
         } catch (e: Exception) {

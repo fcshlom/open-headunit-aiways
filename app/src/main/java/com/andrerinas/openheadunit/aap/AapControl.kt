@@ -37,6 +37,12 @@ internal class AapControlMedia(
 
     override fun execute(message: AapMessage): Int {
 
+        // Aiways: the driver's display has its own handling. Above all, its video focus request
+        // must never reach the main channel's NATIVE branch below, which means "the user left".
+        if (message.channel == Channel.ID_CLUSTER_VID) {
+            return com.andrerinas.openheadunit.aiways.AiwaysClusterTest.control(aapTransport, message)
+        }
+
         when (message.type) {
             Media.MsgType.MEDIA_MESSAGE_SETUP_VALUE -> {
                 val setupRequest = message.parse(Media.MediaSetupRequest.newBuilder()).build()
@@ -501,9 +507,9 @@ internal class AapControlGateway(
         }
         when (message.channel) {
             Channel.ID_CTR -> return serviceControl.execute(message)
-            Channel.ID_INP -> return touchControl.execute(message)
+            Channel.ID_INP, Channel.ID_CLUSTER_INP -> return touchControl.execute(message)
             Channel.ID_SEN -> return sensorControl.execute(message)
-            Channel.ID_VID, Channel.ID_AUD, Channel.ID_AU1, Channel.ID_AU2, Channel.ID_MIC -> return mediaControl.execute(message)
+            Channel.ID_VID, Channel.ID_CLUSTER_VID, Channel.ID_AUD, Channel.ID_AU1, Channel.ID_AU2, Channel.ID_MIC -> return mediaControl.execute(message)
         }
         return 0
     }
@@ -513,6 +519,10 @@ internal class AapControlGateway(
                 .setStatus(Common.MessageStatus.STATUS_SUCCESS)
                 .build())
         aapTransport.send(msg)
+
+        if (channel == Channel.ID_CLUSTER_VID || channel == Channel.ID_CLUSTER_INP) {
+            com.andrerinas.openheadunit.aiways.AiwaysClusterTest.onChannelOpen(channel, request)
+        }
 
         if (channel == Channel.ID_SEN) {
             aapTransport.send(DrivingStatusEvent(Sensors.SensorBatch.DrivingStatusData.Status.UNRESTRICTED))

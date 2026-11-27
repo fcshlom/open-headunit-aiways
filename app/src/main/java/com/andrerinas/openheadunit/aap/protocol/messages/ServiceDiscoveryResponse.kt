@@ -338,6 +338,10 @@ internal class ServiceDiscoveryResponse(context: Context, audioConfig: AudioSess
             }.build()
             services.add(navigationStatus)
 
+            // Aiways (4.0.0-aiways.20): the driver's display as a cluster screen, so the phone's
+            // navigation app can send a map of its own for it. Empty once the test is off.
+            services.addAll(com.andrerinas.openheadunit.aiways.AiwaysClusterTest.servicesForDiscovery(context))
+
             val sessionConfig = (if (settings.hideClock) 0x01 else 0) or
                 (if (settings.hidePhoneSignal) 0x02 else 0) or
                 (if (settings.hideBatteryLevel) 0x04 else 0)

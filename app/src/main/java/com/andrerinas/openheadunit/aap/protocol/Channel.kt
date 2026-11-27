@@ -17,6 +17,10 @@ object Channel {
     const val ID_NOTI = 11
     const val ID_PHONE = 12
     const val ID_WIFI = 13
+    /** Aiways: video of the driver's display (instrument cluster), announced by AiwaysClusterTest. */
+    const val ID_CLUSTER_VID = 14
+    /** Aiways: the input service bound to the driver's display; announced with it. */
+    const val ID_CLUSTER_INP = 15
 
     fun name(channel: Int): String {
         when (channel) {
@@ -33,6 +37,8 @@ object Channel {
             ID_NAV -> return "NAVIGATION_DIRECTIONS"
             ID_NOTI -> return "NOTIFICATION"
             ID_PHONE -> return "PHONE_STATUS"
+            ID_CLUSTER_VID -> return "CLUSTER_VIDEO"
+            ID_CLUSTER_INP -> return "CLUSTER_INPUT"
         }
         return "UNK"
     }
