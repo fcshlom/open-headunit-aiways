@@ -71,6 +71,8 @@ internal object AiwaysClusterTest {
      * (DiAuto; LIVI holds it the same way).
      */
     private const val FOCUS_DELAY_MS = 1_500L
+    /** Between the release and the regain of a keyframe request, as for the main screen. */
+    private const val KEYFRAME_GAP_MS = 400L
     private const val STATS_EVERY_MS = 30_000L
     /** After this many frames the rung counts as streamed. */
     private const val STREAMED_AFTER_FRAMES = 10L
@@ -234,6 +236,7 @@ internal object AiwaysClusterTest {
                 }
                 log("START: the phone starts the cluster stream (session ${start.sessionId}, " +
                     "config ${start.configurationIndex}, ${(now - discoveryAtMs) / 1000} s after discovery)")
+                AiwaysClusterMap.onStreamStart()
             }
             Media.MsgType.MEDIA_MESSAGE_STOP_VALUE -> {
                 log("STOP: the phone stopped the cluster stream after $frames frames ($keyframes key, ${bytes / 1024} kB)")
@@ -282,6 +285,32 @@ internal object AiwaysClusterTest {
         log("granted the cluster video focus (projected), ${FOCUS_DELAY_MS / 1000.0} s after the main picture")
     }
 
+    /** The description announced in this session, null when none ([AiwaysClusterMap] sizes its window by it). */
+    fun currentRung(): AiwaysClusterLadder.Rung? = synchronized(lock) { rung }
+
+    /**
+     * Asks the phone for a keyframe on the cluster channel: the focus is released and taken back
+     * [KEYFRAME_GAP_MS] later, the cycle that works for the main screen (a gain alone has proved inert
+     * there; AapTransport.sendKeyframeCycleRelease, WarmRelaunchKeyframePolicy.FOCUS_CYCLE_GAP_MS). The
+     * phone answers the release with a STOP and the regain with a new START. False when no stream ran.
+     */
+    fun requestKeyframe(): Boolean {
+        val gen: Int
+        val t: AapTransport
+        synchronized(lock) {
+            if (rung == null || startAtMs < 0) return false
+            t = transport?.get() ?: return false
+            gen = generation
+        }
+        t.send(VideoFocusEvent(gain = false, unsolicited = false, channel = Channel.ID_CLUSTER_VID))
+        main.postDelayed({
+            if (synchronized(lock) { gen == generation }) {
+                t.send(VideoFocusEvent(gain = true, unsolicited = true, channel = Channel.ID_CLUSTER_VID))
+            }
+        }, KEYFRAME_GAP_MS)
+        return true
+    }
+
     /**
      * A DATA or CODEC_CONFIG message on the cluster video channel, complete (the reassembler joins
      * the fragments of every channel but the main video). Counted and, if a dump is open, kept.
@@ -300,6 +329,7 @@ internal object AiwaysClusterTest {
                     log("codec config: $length B, NAL ${AiwaysClusterDump.nalTypes(data, offset, length)}")
                 }
                 dump?.onCodecConfig(data, offset, length)
+                AiwaysClusterMap.onCodecConfig(data, offset, length)
                 return
             }
             val start = AiwaysClusterDump.mediaStart(data, offset, length)
@@ -308,7 +338,9 @@ internal object AiwaysClusterTest {
             bytes += length
             windowFrames++
             windowBytes += length
-            if (AiwaysClusterDump.NAL_IDR in nals) keyframes++
+            val keyframe = AiwaysClusterDump.NAL_IDR in nals
+            if (keyframe) keyframes++
+            if (start >= 0) AiwaysClusterMap.onFrame(data, offset + start, length - start, keyframe)
             if (frames == 1L) {
                 log("first frame: $length B, " + if (start >= 0) "NAL $nals" else "no H.264 start code in its first bytes")
             }
@@ -389,6 +421,7 @@ internal object AiwaysClusterTest {
             sinceStart = if (startAtMs >= 0) now - startAtMs else -1L
         }
         mainVideoSeen = true
+        AiwaysClusterMap.onSessionEnd()
         log("session $state ($reason) after ${sinceDiscovery / 1000} s with rung ${r.index}: " +
             "$frames cluster frames ($keyframes key, ${bytes / 1024} kB)")
         val strike = AiwaysClusterLadder.strikeReason(reason, AccPowerState.isOff, sinceDiscovery, sinceStart) ?: return
