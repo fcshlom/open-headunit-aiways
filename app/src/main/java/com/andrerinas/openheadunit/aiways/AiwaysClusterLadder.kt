@@ -11,18 +11,21 @@ package com.andrerinas.openheadunit.aiways
  *   270 x 480, which is the part of the head unit's second display the driver's display shows
  *   (launcher `ClusterNav.PANEL_W` x `PANEL_H`), pixel for pixel. Tried only once rung 0 streamed.
  *
- * The safety rule: a session that announced the driver's display and then ended early, for any
- * reason other than the driver leaving Android Auto or the car going off, counts as a strike against
- * its rung. A strike on rung 1 goes back to rung 0; a strike on rung 0 stops the test. Strikes are
- * kept for this app version only: the next build tries again from a clean state.
+ * The safety rule: a session that announced the driver's display and ended in a way that points at
+ * the announcement counts as a strike against its rung (see [strikeReason]). A strike on rung 1 goes
+ * back to rung 0; a strike on rung 0 stops announcing. Strikes are kept for this app version only:
+ * the next build tries again from a clean state.
  */
 internal object AiwaysClusterLadder {
 
     /** A session that ends this soon after service discovery counts as a strike. */
     const val EARLY_END_MS = 120_000L
 
-    /** A session that ends this soon after the phone started the cluster stream counts as one too. */
+    /** A session the phone itself ends this soon after it started the cluster stream counts as one too. */
     const val AFTER_START_MS = 30_000L
+
+    /** Cluster frames after which the phone has accepted the description (as [AiwaysClusterTest] counts it streamed). */
+    const val ACCEPTED_AFTER_FRAMES = 10L
 
     data class Rung(
         val index: Int,
@@ -74,27 +77,36 @@ internal object AiwaysClusterLadder {
     /**
      * Why a session that announced the driver's display counts as a strike, or null when it does not.
      *
-     * [sinceStartMs] is the time from the phone's last START on the cluster channel to the end, or -1
-     * when it never started one. DiAuto saw Google Maps restart the projection right when guidance
-     * began with a cluster announced; the cluster stream starts with guidance, so that end comes
-     * within [AFTER_START_MS] of a START.
+     * - It ended within [EARLY_END_MS] of service discovery before the phone had sent
+     *   [ACCEPTED_AFTER_FRAMES] cluster frames: the phone may have refused the description (DiAuto saw
+     *   phones close the session about a second after discovery). Once the frames flow, the phone has
+     *   accepted it, and an early end is the link's: on 27 November the first session of
+     *   4.0.0-aiways.21 ended 4 s in when the phone's USB connection dropped, after 33 cluster frames,
+     *   and the old rule switched the driver's display off for the whole version.
+     * - The phone itself ended it ([REASON_PHONE_LEFT]) within [AFTER_START_MS] of a START on the cluster
+     *   channel ([sinceStartMs], -1 when none): DiAuto saw Google Maps restart the projection right when
+     *   guidance began with a cluster announced, and the cluster stream starts with guidance.
+     *
+     * The driver leaving Android Auto, a settings restart and the car going off never count.
      */
     fun strikeReason(
         reason: String,
         carOff: Boolean,
         sinceDiscoveryMs: Long,
         sinceStartMs: Long,
+        clusterFrames: Long,
     ): String? = when {
         reason == REASON_USER_EXIT || reason == REASON_SETTINGS_RESTART -> null
         carOff -> null
-        sinceDiscoveryMs in 0 until EARLY_END_MS ->
-            "the session ended ${sinceDiscoveryMs / 1000} s after service discovery ($reason)"
-        sinceStartMs in 0 until AFTER_START_MS ->
-            "the session ended ${sinceStartMs / 1000} s after the cluster stream started ($reason)"
+        sinceDiscoveryMs in 0 until EARLY_END_MS && clusterFrames < ACCEPTED_AFTER_FRAMES ->
+            "the session ended ${sinceDiscoveryMs / 1000} s after service discovery with $clusterFrames cluster frames ($reason)"
+        reason == REASON_PHONE_LEFT && sinceStartMs in 0 until AFTER_START_MS ->
+            "the phone ended the session ${sinceStartMs / 1000} s after the cluster stream started"
         else -> null
     }
 
     // The same strings as HeadUnitIntent.SessionState in the contract module.
     const val REASON_USER_EXIT = "user_exit"
     const val REASON_SETTINGS_RESTART = "settings_restart"
+    const val REASON_PHONE_LEFT = "phone_left"
 }

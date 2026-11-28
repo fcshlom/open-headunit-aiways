@@ -52,23 +52,30 @@ class AiwaysClusterLadderTest {
     }
 
     @Test
-    fun `an early end counts as a strike`() {
-        assertNotNull(AiwaysClusterLadder.strikeReason("link_lost", false, 5_000L, -1L))
-        assertNotNull(AiwaysClusterLadder.strikeReason("phone_left", false, 119_000L, -1L))
-        assertNotNull(AiwaysClusterLadder.strikeReason("peer_silent", false, 1_000L, -1L))
+    fun `an early end before the phone streamed counts as a strike`() {
+        assertNotNull(AiwaysClusterLadder.strikeReason("link_lost", false, 5_000L, -1L, 0L))
+        assertNotNull(AiwaysClusterLadder.strikeReason("phone_left", false, 119_000L, -1L, 3L))
+        assertNotNull(AiwaysClusterLadder.strikeReason("peer_silent", false, 1_000L, -1L, 0L))
     }
 
     @Test
-    fun `an end right after the cluster stream started counts, even late in the session`() {
-        assertNotNull(AiwaysClusterLadder.strikeReason("link_lost", false, 900_000L, 2_000L))
-        assertNull(AiwaysClusterLadder.strikeReason("link_lost", false, 900_000L, 31_000L))
-        assertNull(AiwaysClusterLadder.strikeReason("link_lost", false, 900_000L, -1L))
+    fun `an early end after the frames flowed is the link's, not a strike (27 November, USB dropped)`() {
+        assertNull(AiwaysClusterLadder.strikeReason("link_lost", false, 4_000L, 2_000L, 33L))
+        assertNull(AiwaysClusterLadder.strikeReason("link_lost", false, 60_000L, 58_000L, 1_700L))
+    }
+
+    @Test
+    fun `the phone ending the session right after the cluster stream started counts, even late`() {
+        assertNotNull(AiwaysClusterLadder.strikeReason("phone_left", false, 900_000L, 2_000L, 5_000L))
+        assertNull(AiwaysClusterLadder.strikeReason("link_lost", false, 900_000L, 2_000L, 5_000L))
+        assertNull(AiwaysClusterLadder.strikeReason("phone_left", false, 900_000L, 31_000L, 5_000L))
+        assertNull(AiwaysClusterLadder.strikeReason("phone_left", false, 900_000L, -1L, 5_000L))
     }
 
     @Test
     fun `the driver leaving Android Auto or the car going off is no strike`() {
-        assertNull(AiwaysClusterLadder.strikeReason("user_exit", false, 5_000L, 1_000L))
-        assertNull(AiwaysClusterLadder.strikeReason("settings_restart", false, 5_000L, 1_000L))
-        assertNull(AiwaysClusterLadder.strikeReason("phone_left", true, 5_000L, 1_000L))
+        assertNull(AiwaysClusterLadder.strikeReason("user_exit", false, 5_000L, 1_000L, 0L))
+        assertNull(AiwaysClusterLadder.strikeReason("settings_restart", false, 5_000L, 1_000L, 0L))
+        assertNull(AiwaysClusterLadder.strikeReason("phone_left", true, 5_000L, 1_000L, 0L))
     }
 }
