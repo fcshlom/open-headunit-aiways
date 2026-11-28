@@ -75,7 +75,7 @@ internal object AiwaysClusterTest {
     private const val KEYFRAME_GAP_MS = 400L
     private const val STATS_EVERY_MS = 30_000L
     /** After this many frames the rung counts as streamed. */
-    private const val STREAMED_AFTER_FRAMES = 10L
+    private const val STREAMED_AFTER_FRAMES = AiwaysClusterLadder.ACCEPTED_AFTER_FRAMES
     private const val DUMPS_PER_DAY = 3
     /** 36 KB of H.264 per log line, 48 KB of base64. A multiple of 3, see [writeDump]. */
     private const val DUMP_PART_BYTES = 36 * 1024
@@ -424,7 +424,7 @@ internal object AiwaysClusterTest {
         AiwaysClusterMap.onSessionEnd()
         log("session $state ($reason) after ${sinceDiscovery / 1000} s with rung ${r.index}: " +
             "$frames cluster frames ($keyframes key, ${bytes / 1024} kB)")
-        val strike = AiwaysClusterLadder.strikeReason(reason, AccPowerState.isOff, sinceDiscovery, sinceStart) ?: return
+        val strike = AiwaysClusterLadder.strikeReason(reason, AccPowerState.isOff, sinceDiscovery, sinceStart, frames) ?: return
         val app = context.applicationContext ?: context
         worker.post {
             val next = AiwaysClusterLadder.withFailed(loadState(app), r.index)

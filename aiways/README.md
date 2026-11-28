@@ -142,7 +142,7 @@ This build only asks and listens. Nothing is decoded or shown on the car yet. `A
 - **Two descriptions, one per connection** (`AiwaysClusterLadder`):
   - Rung 0 is 1280 x 720 with no margins, density 160: what a phone accepted in DiAuto's tests.
   - Rung 1 is tried once rung 0 has streamed 10 frames: 800 x 480 with a 530 px width margin, so the phone draws into the middle 270 x 480, the size of the panel, pixel for pixel.
-- **Stops by itself:** a session that announced the driver's display and then ended within 2 minutes of service discovery, or within 30 s of the phone starting the cluster stream, counts as a strike against its rung. The driver leaving Android Auto, a settings restart and the car going off do not count. A strike on rung 1 goes back to rung 0. A strike on rung 0 stops announcing for the rest of this version. The next build starts clean.
+- **Stops by itself:** a session that announced the driver's display counts as a strike against its rung when it ended within 2 minutes of service discovery before the phone had sent 10 cluster frames, or when the phone itself ended it within 30 s of starting the cluster stream. The driver leaving Android Auto, a settings restart and the car going off do not count. A strike on rung 1 goes back to rung 0. A strike on rung 0 stops announcing for the rest of this version. The next build starts clean.
 
 In the day log, look for `[cluster]`:
 
@@ -187,3 +187,9 @@ Now `AiwaysClusterMap` shows that map on the driver's display when the launcher 
 - **Failures:** if the window cannot be added or the decoder fails, nothing is retried for 60 s, and the launcher keeps its arrows.
 
 In the day log, look for `[clustermap]`: the launcher's requests, `window added`, `decoder started`, `asked the phone for a keyframe`, `first frame on the panel`, `map on the driver's display` or `map not showing: <why>`, and every 30 s how many frames reached the panel.
+
+## The safety rule no longer trips on a dropped link (4.0.0-aiways.22)
+
+On 27 November the first session of 4.0.0-aiways.21 ended 4 s after connecting, when the phone's USB connection dropped (`USB_DEVICE_DETACHED`). By then the phone had already sent 33 cluster frames. The old rule counted every session that ended within 2 minutes as the phone refusing the driver's display. It switched the driver's display off for the whole version, so the map never came, and the launcher showed its arrows all evening.
+
+Now an early end counts only before the phone has sent 10 cluster frames, the point at which it has accepted the description. An end right after a START counts only when the phone itself closed the session (`phone_left`), not when the link dropped. `AiwaysClusterLadderTest` has the 27 November case. The new version starts with no strikes, so the driver's display is announced again.
